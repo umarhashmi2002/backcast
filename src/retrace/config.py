@@ -30,7 +30,7 @@ class Settings(BaseSettings):
         default="us-east-1",
         validation_alias=AliasChoices("AWS_REGION", "RETRACE_AWS_REGION"),
     )
-    bedrock_model_id: str = "us.anthropic.claude-sonnet-5-20250929-v1:0"
+    bedrock_model_id: str = "us.anthropic.claude-sonnet-5"
     embedding_model_id: str = "amazon.titan-embed-text-v2:0"
     embedding_dims: int = 1024
     artifact_bucket: str = ""

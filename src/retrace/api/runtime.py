@@ -6,6 +6,7 @@ import json
 import os
 import time
 from functools import lru_cache
+from pathlib import Path
 from typing import Any
 
 from ..config import get_settings
@@ -33,11 +34,22 @@ def get_database_url() -> str:
         data = json.loads(raw)
     except json.JSONDecodeError:
         return raw
-    if isinstance(data, dict):
-        url = data.get("url") or data.get("RETRACE_DATABASE_URL")
-        if isinstance(url, str):
-            return url
-    return raw
+    if not isinstance(data, dict):
+        return raw
+
+    url = data.get("url") or data.get("RETRACE_DATABASE_URL") or raw
+    if not isinstance(url, str):
+        return raw
+
+    # If the secret carries the cluster CA cert, materialize it so libpq can do
+    # sslmode=verify-full without baking a cluster-specific cert into the image.
+    ca_cert = data.get("ca_cert")
+    if isinstance(ca_cert, str) and ca_cert.strip():
+        cert_path = "/tmp/retrace-root.crt"
+        Path(cert_path).write_text(ca_cert)
+        if "sslrootcert=" not in url:
+            url += ("&" if "?" in url else "?") + f"sslrootcert={cert_path}"
+    return url
 
 
 def get_engine() -> MemoryEngine:

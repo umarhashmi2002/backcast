@@ -1,8 +1,7 @@
 .git
 .github
 .venv
-infra/.venv
-infra/cdk.out
+infra
 cockroach-data
 docs
 tests

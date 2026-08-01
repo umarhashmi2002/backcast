@@ -31,7 +31,7 @@ class CommanderResult:
 class IncidentCommander:
     """Runs one incident to a conclusion using an LLM + the memory tools."""
 
-    def __init__(self, engine: MemoryEngine, llm: LLM, *, max_steps: int = 8) -> None:
+    def __init__(self, engine: MemoryEngine, llm: LLM, *, max_steps: int = 12) -> None:
         self._engine = engine
         self._llm = llm
         self._max_steps = max_steps

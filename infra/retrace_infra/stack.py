@@ -44,7 +44,10 @@ from aws_cdk import (
 from constructs import Construct
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
-_BEDROCK_MODEL_ID = "us.anthropic.claude-sonnet-5-20250929-v1:0"
+# Intended reasoning model. Override at deploy time with
+#   cdk deploy -c bedrock_model_id=<id>
+# e.g. us.amazon.nova-pro-v1:0 until Anthropic use-case access is enabled.
+_BEDROCK_MODEL_ID = "us.anthropic.claude-sonnet-5"
 _EMBEDDING_MODEL_ID = "amazon.titan-embed-text-v2:0"
 
 
@@ -76,12 +79,13 @@ class RetraceStack(Stack):
             secret_string_value=SecretValue.unsafe_plain_text('{"url":"REPLACE_ME"}'),
         )
 
+        model_id = self.node.try_get_context("bedrock_model_id") or _BEDROCK_MODEL_ID
         common_env = {
             "RETRACE_ENV": "prod",
             "RETRACE_LOG_LEVEL": "INFO",
             "RETRACE_DATABASE_SECRET": db_secret.secret_name,
             "RETRACE_ARTIFACT_BUCKET": artifacts.bucket_name,
-            "RETRACE_BEDROCK_MODEL_ID": _BEDROCK_MODEL_ID,
+            "RETRACE_BEDROCK_MODEL_ID": model_id,
             "RETRACE_EMBEDDING_MODEL_ID": _EMBEDDING_MODEL_ID,
         }
 
@@ -118,7 +122,7 @@ class RetraceStack(Stack):
             actions=["bedrock:InvokeModel"],
             resources=[
                 "arn:aws:bedrock:*::foundation-model/anthropic.*",
-                "arn:aws:bedrock:*::foundation-model/amazon.titan-embed-*",
+                "arn:aws:bedrock:*::foundation-model/amazon.*",  # Titan embeddings + Nova
                 f"arn:aws:bedrock:*:{self.account}:inference-profile/*",
             ],
         )
