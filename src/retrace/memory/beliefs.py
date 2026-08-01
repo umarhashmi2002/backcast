@@ -31,6 +31,27 @@ class BeliefStore:
             created_at=row["created_at"],
         )
 
+    def get_or_create_hypothesis(
+        self, org_id: str, incident_id: UUID | str, statement: str
+    ) -> Hypothesis:
+        """Return the incident's hypothesis with this statement, creating it if new."""
+        row = self._conn.execute(
+            "SELECT id, status, db_ts::STRING AS db_ts, created_at FROM hypotheses "
+            "WHERE incident_id = %s AND statement = %s LIMIT 1",
+            (incident_id, statement),
+        ).fetchone()
+        if row is not None:
+            return Hypothesis(
+                id=row["id"],
+                org_id=org_id,
+                incident_id=UUID(str(incident_id)),
+                statement=statement,
+                status=row["status"],
+                db_ts=row["db_ts"],
+                created_at=row["created_at"],
+            )
+        return self.create_hypothesis(org_id, incident_id, statement)
+
     def set_hypothesis_status(self, hypothesis_id: UUID | str, status: HypothesisStatus) -> None:
         self._conn.execute(
             "UPDATE hypotheses SET status = %s, updated_at = now() WHERE id = %s",
