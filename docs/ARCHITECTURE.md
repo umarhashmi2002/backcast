@@ -8,7 +8,7 @@ beliefs, and decisions never leave one transactional, temporal system of record.
 
 | Layer | Piece | Responsibility |
 |-------|-------|----------------|
-| Ingress | API Gateway → `ingest` Lambda | Turn an alert into an incident (idempotent on the source fingerprint), stash raw payload in S3. |
+| Ingress | Function URL → `ingest` Lambda | Turn an alert into an incident (idempotent on the source fingerprint), stash raw payload in S3. |
 | Reasoning | `commander` Lambda + Bedrock | Recall similar evidence, form/revise hypotheses & beliefs, decide on remediation. |
 | Action | `ActionLeaseCoordinator` | Grant exactly one worker the right to execute an action; idempotent, crash-safe. |
 | Memory | CockroachDB | Evidence, beliefs, provenance, leases, ledger, long-term memory. |

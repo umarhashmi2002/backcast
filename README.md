@@ -116,7 +116,7 @@ flowchart TB
     AM["Alert source<br/>(Alertmanager / PagerDuty)"]
 
     subgraph AWS["AWS — serverless, deployed via CDK (Python)"]
-        APIGW["API Gateway"]
+        APIGW["Function URLs"]
         L1["Lambda: ingest"]
         L2["Lambda: commander<br/>(reason + act)"]
         L3["Lambda: consolidate<br/>(EventBridge cron)"]
@@ -161,9 +161,9 @@ See [`docs/ARCHITECTURE.md`](./docs/ARCHITECTURE.md) for the full design.
 | **Agent Skills Repo** | `cockroachlabs/cockroachdb-skills` is used in the dev loop for schema / performance / security review. |
 
 **AWS services** (requires ≥ 1 — Retrace uses several): Amazon **Bedrock** (Claude reasoning + Titan
-embeddings) · AWS **Lambda** (agent execution) · Amazon **S3** (artifacts) · **API Gateway** ·
-**EventBridge** (consolidation schedule) · **Secrets Manager** · **CloudWatch** — all provisioned with
-the **AWS CDK** in Python.
+embeddings) · AWS **Lambda** (agent execution, container images) · Amazon **S3** (artifacts) ·
+**Lambda Function URLs** · **EventBridge** (consolidation schedule) · **Secrets Manager** ·
+**CloudWatch** (alarms + dashboard) — all provisioned with the **AWS CDK** in Python.
 
 ## How it maps to the judging criteria
 

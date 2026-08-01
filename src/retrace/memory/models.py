@@ -158,3 +158,58 @@ class LeaseClaim(BaseModel):
     lease_id: UUID | None = None
     idempotency_key: str | None = None
     existing_holder: str | None = None
+
+
+class SemanticFact(BaseModel):
+    id: UUID | None = None
+    org_id: str
+    statement: str
+    source: str = "consolidation"
+    service: str | None = None
+    confidence: float = 0.6
+    importance: float = 0.5
+    retrieval_score: float = 1.0
+    created_at: datetime | None = None
+
+
+class RecalledFact(BaseModel):
+    id: UUID
+    statement: str
+    service: str | None = None
+    confidence: float
+    retrieval_score: float
+    distance: float
+    score: float
+
+
+class Procedure(BaseModel):
+    id: UUID | None = None
+    org_id: str
+    name: str
+    trigger_pattern: str
+    steps: str
+    service: str | None = None
+    success_count: int = 0
+    failure_count: int = 0
+    source_incident_id: UUID | None = None
+
+
+class RecalledProcedure(BaseModel):
+    id: UUID
+    name: str
+    trigger_pattern: str
+    steps: str
+    success_count: int
+    failure_count: int
+    distance: float
+    score: float
+
+
+class ConsolidationReport(BaseModel):
+    incident_id: UUID
+    skipped: bool = False
+    reason: str | None = None
+    facts_created: int = 0
+    facts_reinforced: int = 0
+    procedure_created: bool = False
+    procedure_reinforced: bool = False

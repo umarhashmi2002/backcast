@@ -26,24 +26,32 @@ make test-integration # live-DB integration tests
 
 ## Cloud: AWS
 
-Prerequisites: AWS CLI authenticated, and **Bedrock model access enabled** in the target region
-(`us-east-1`) for Anthropic Claude and Amazon Titan Text Embeddings v2 — enable these once in the
-Bedrock console under *Model access*.
+Prerequisites:
+- AWS CLI authenticated and **Docker running** (the Lambdas ship as container images).
+- A recent CDK CLI: `npm i -g aws-cdk@latest` (>= 2.1134).
+- **Bedrock model access enabled** in `us-east-1` for Anthropic Claude and Amazon Titan Text
+  Embeddings v2 — enable once in the Bedrock console under *Model access*.
 
 ```bash
-# 1. Store the CockroachDB DSN in Secrets Manager
-aws secretsmanager create-secret --name retrace/database-url \
-  --secret-string "$RETRACE_DATABASE_URL"
-
-# 2. Deploy the stacks (S3, Lambda, API Gateway, EventBridge, IAM, CloudWatch)
+# 1. Deploy. CDK creates the S3 bucket, the Secrets Manager secret (placeholder value),
+#    three container Lambdas, the EventBridge schedule, alarms, and a dashboard.
 cd infra
-uv run cdk bootstrap        # first time only
-uv run cdk deploy --all
+uv sync
+uv run cdk bootstrap        # first time per account/region only
+uv run cdk deploy           # prints IngestUrl / CommanderUrl / DatabaseSecretName
+
+# 2. Put the real CockroachDB DSN into the secret CDK created:
+aws secretsmanager put-secret-value --secret-id retrace/database-url \
+  --secret-string "{\"url\":\"$RETRACE_DATABASE_URL\"}"
+
+# 3. Smoke test (use the IngestUrl from the deploy output):
+curl -sX POST "$INGEST_URL" -d '{"org_id":"demo","fingerprint":"am-1","service":"payments-api"}'
 ```
 
-The CDK app wires each Lambda with least-privilege IAM (specific Bedrock model ARNs, one S3 prefix,
-one secret). Cost note: everything is serverless/pay-per-use — Bedrock per-token, Lambda per-invoke,
-S3 per-GB — which keeps a demo comfortably inside AWS free-tier credits.
+HTTP entry points are **Lambda Function URLs** (`IngestUrl`, `CommanderUrl`). Each Lambda gets
+least-privilege IAM (scoped Bedrock model ARNs, the one bucket, the one secret). Everything is
+serverless/pay-per-use — Bedrock per-token, Lambda per-invoke, S3 per-GB — keeping a demo
+comfortably inside AWS free-tier credits.
 
 ## Configuration
 All settings are environment variables (see [`.env.example`](../.env.example)); prefix `RETRACE_`

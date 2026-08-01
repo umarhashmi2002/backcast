@@ -14,7 +14,7 @@ from uuid import UUID, uuid4
 from .config import Settings, get_settings
 from .db import migrate as migrate_module
 from .memory import MemoryEngine
-from .memory.models import Evidence, EvidenceKind, NodeType, Relation
+from .memory.models import Evidence, EvidenceKind, IncidentStatus, NodeType, Relation
 
 
 def _rule(title: str) -> None:
@@ -184,6 +184,20 @@ def _run_demo(engine: MemoryEngine, org: str, embed_mode: str) -> None:
     # --- Mechanism 4: hash-chained ledger --------------------------------
     _rule("MECHANISM 4 · Hash-chained permanent provenance")
     _kv("ledger chain verified", str(engine.ledger.verify(iid)))
+
+    # --- Mechanism 5: compounding knowledge ------------------------------
+    _rule("MECHANISM 5 · Compounding knowledge (evidence-preserving consolidation)")
+    engine.incidents.set_status(
+        iid, IncidentStatus.resolved, resolution="Rolled back v2.4.1 and raised the DB pool limit"
+    )
+    report = engine.consolidator.consolidate_incident(org, iid)
+    _kv("semantic facts learned", str(report.facts_created))
+    _kv("procedure learned", "yes" if report.procedure_created else "no")
+    learned = engine.procedural.recall(org, "deploy connection leak in payments-api", top_k=1)
+    if learned:
+        _kv("recalled next time", f"{learned[0].name} → {learned[0].steps[:40]}")
+    _kv("evidence still immutable", f"{len(engine.evidence.for_incident(iid))} rows, unchanged")
+
     print(
         "\n\033[1;32mDemo complete — one transactional temporal DB did all of the above.\033[0m\n"
     )

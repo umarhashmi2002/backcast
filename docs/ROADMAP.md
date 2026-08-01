@@ -9,22 +9,22 @@ Deadline: **Aug 18, 2026** (CockroachDB × AWS Agentic Memory Hackathon).
   Row-Level-TTL working memory. C-SPANN vector indexes. Idempotent migration runner.
 - Memory engine: `EvidenceStore`, `BeliefStore`, `TemporalReconstructor`, `ActionLeaseCoordinator`,
   `EventLedger`, `IncidentStore`, embeddings (Bedrock Titan + offline hash).
-- **All five headline mechanisms proven** by 13 tests + `retrace demo` on CockroachDB 25.2.
+- **All five headline mechanisms proven** by tests + `retrace demo` on CockroachDB 25.2.
+- **SRE Incident Commander agent** — Bedrock Converse tool-loop (recall → beliefs → action lease),
+  with an offline scripted LLM so the whole loop is tested in CI without AWS.
+- **Long-term memory + evidence-preserving consolidation** — `SemanticStore`, `ProceduralStore`, and
+  a gated `Consolidator` (dedup-reinforce, retrieval decay, provenance links; never deletes evidence).
+- **26 tests green** (unit + live-DB integration); CI workflow in `.github/`.
 
 ## In progress 🚧
-1. **Long-term memory + consolidation** — `SemanticStore`, `ProceduralStore`, and the gated,
-   evidence-preserving `Consolidator` (distill closed incidents → versioned facts + procedures,
-   linked to immutable evidence; decay retrieval score; never delete evidence).
-2. **SRE Incident Commander agent** — Bedrock Claude reasoning loop with tools (recall evidence,
-   form/revise beliefs, claim + execute remediation via the action lease).
-3. **Lambda handlers** — `ingest` (alert → incident, idempotent on `external_id`), `commander`
+1. **Lambda handlers** — `ingest` (alert → incident, idempotent on `external_id`), `commander`
    (agent turn), `consolidate` (EventBridge schedule).
-4. **AWS CDK (Python)** — S3, Lambda, API Gateway, EventBridge, Secrets Manager, CloudWatch,
+2. **AWS CDK (Python)** — S3, Lambda, API Gateway, EventBridge, Secrets Manager, CloudWatch,
    least-privilege IAM, Bedrock invoke permissions.
-5. **ccloud provisioning** — finalize [`scripts/bootstrap_cockroach.sh`](../scripts/bootstrap_cockroach.sh).
-6. **Concurrency demo** — multi-process action-lease race + crash-and-resume script for the video.
-7. **Signed incident packages** — export closed-incident provenance bundles to S3.
-8. **Demo video** (< 3 min) + hosted demo URL.
+3. **Seed data** — `scripts/load_seed_data.py` (historical resolved incidents for cross-incident recall).
+4. **Concurrency demo** — multi-process action-lease race + crash-and-resume script for the video.
+5. **Signed incident packages** — export closed-incident provenance bundles to S3.
+6. **Demo video** (< 3 min) + hosted demo URL.
 
 ## Stretch
 - MCP-server-driven read-only "explain this incident" tool.

@@ -91,3 +91,13 @@ class EvidenceStore:
         ]
         recalled.sort(key=lambda r: r.score, reverse=True)
         return recalled[:k]
+
+    def for_incident(self, incident_id: UUID | str) -> list[Evidence]:
+        """Return all evidence rows for an incident (immutable, ordered by time)."""
+        rows = self._conn.execute(
+            "SELECT id, org_id, incident_id, kind, source, content, observed_at, s3_uri, "
+            "db_ts::STRING AS db_ts, created_at "
+            "FROM evidence WHERE incident_id = %s ORDER BY observed_at",
+            (incident_id,),
+        ).fetchall()
+        return [Evidence(**row) for row in rows]

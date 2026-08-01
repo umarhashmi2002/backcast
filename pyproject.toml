@@ -82,7 +82,7 @@ ignore_missing_imports = true
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-addopts = "-ra --strict-markers --cov=retrace --cov-report=term-missing"
+addopts = "-ra --strict-markers --import-mode=importlib --cov=retrace --cov-report=term-missing"
 asyncio_mode = "auto"
 markers = [
     "integration: tests that require a live CockroachDB (deselect with '-m \"not integration\"')",

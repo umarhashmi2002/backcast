@@ -5,7 +5,7 @@
 SHELL := /bin/bash
 
 .PHONY: help bootstrap sync lint format typecheck test test-integration \
-        db-up db-down db-migrate seed run-local deploy synth clean
+        db-up db-down db-migrate seed demo race-demo deploy synth clean
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z0-9_-]+:.*?## .*$$' $(MAKEFILE_LIST) \
@@ -48,8 +48,11 @@ db-migrate: ## Apply the schema to the configured database
 seed: ## Load synthetic incident history for the demo
 	uv run python scripts/load_seed_data.py
 
-run-local: ## Run the agent locally against the configured database
-	uv run retrace chat
+demo: ## Narrate all five memory mechanisms against the database
+	uv run retrace demo
+
+race-demo: ## Action-lease concurrency + crash-safety demo (25 workers, crash & resume)
+	uv run python scripts/concurrency_demo.py
 
 synth: ## Synthesize the CDK CloudFormation templates
 	cd infra && uv run cdk synth

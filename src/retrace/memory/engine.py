@@ -5,11 +5,14 @@ from __future__ import annotations
 from ..config import Settings, get_settings
 from ..db.connection import Connection, shared_connection
 from .beliefs import BeliefStore
+from .consolidation import Consolidator, Distiller
 from .embeddings import Embedder, build_embedder
 from .evidence import EvidenceStore
 from .incidents import IncidentStore
 from .leases import ActionLeaseCoordinator
 from .ledger import EventLedger
+from .procedural import ProceduralStore
+from .semantic import SemanticStore
 from .temporal import TemporalReconstructor
 
 
@@ -26,6 +29,8 @@ class MemoryEngine:
         conn: Connection | None = None,
         embedder: Embedder | None = None,
         settings: Settings | None = None,
+        *,
+        distiller: Distiller | None = None,
     ) -> None:
         self.settings = settings or get_settings()
         self.conn = conn or shared_connection()
@@ -38,6 +43,9 @@ class MemoryEngine:
         self.beliefs = BeliefStore(self.conn)
         self.temporal = TemporalReconstructor(self.conn)
         self.leases = ActionLeaseCoordinator(self.conn)
+        self.semantic = SemanticStore(self.conn, self.embedder, self.settings)
+        self.procedural = ProceduralStore(self.conn, self.embedder, self.settings)
+        self.consolidator = Consolidator(self, distiller)
 
     def close(self) -> None:
         if not self.conn.closed:

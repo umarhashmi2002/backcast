@@ -1,0 +1,15 @@
+[project]
+name = "retrace-infra"
+version = "0.1.0"
+description = "AWS CDK app for Retrace (deployed separately from the runtime package)"
+requires-python = ">=3.12"
+# Needs a recent CDK CLI (>= 2.1134) to read the cloud-assembly schema:
+#   npm i -g aws-cdk@latest
+dependencies = [
+    "aws-cdk-lib>=2.200.0,<3.0.0",
+    "constructs>=10.3.0,<11.0.0",
+]
+
+# This is a CDK app, not an installable library — uv just manages its venv.
+[tool.uv]
+package = false
