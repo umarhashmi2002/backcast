@@ -1,0 +1,15 @@
+# Local single-node CockroachDB for development and integration tests.
+# Requires a version >= 25.2 for C-SPANN distributed vector indexing.
+services:
+  crdb:
+    image: cockroachdb/cockroach:latest-v25.2
+    container_name: retrace-crdb
+    command: start-single-node --insecure --store=type=mem,size=1GiB
+    ports:
+      - "26257:26257" # SQL
+      - "8080:8080" # DB Console
+    healthcheck:
+      test: ["CMD", "cockroach", "sql", "--insecure", "-e", "SELECT 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 12

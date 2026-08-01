@@ -1,0 +1,48 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+.venv/
+venv/
+.python-version.local
+
+# uv
+uv.lock.local
+
+# Testing / coverage
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+.mypy_cache/
+.ruff_cache/
+
+# AWS CDK
+infra/cdk.out/
+infra/.venv/
+cdk.context.json
+
+# Secrets & env
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+secrets/
+service-account*.json
+cc_credentials*
+
+# CockroachDB local
+cockroach-data/
+
+# Editors / OS
+.vscode/
+.idea/
+.DS_Store
+*.swp
+
+# Logs
+*.log
