@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# Provision a CockroachDB Cloud cluster for Retrace using the ccloud CLI.
+# Provision a CockroachDB Cloud cluster for Backcast using the ccloud CLI.
 #
 # The ccloud CLI is agent-friendly: every command supports `-o json`, so this
 # script drives the control plane programmatically and parses results with jq.
@@ -15,10 +15,10 @@
 #
 set -euo pipefail
 
-CLUSTER_NAME="${1:-retrace-hackathon}"
+CLUSTER_NAME="${1:-backcast-hackathon}"
 CLOUD="${2:-aws}"
 REGION="${3:-us-east-1}"
-DB_NAME="retrace"
+DB_NAME="backcast"
 
 command -v ccloud >/dev/null || { echo "error: ccloud CLI not found" >&2; exit 1; }
 command -v jq >/dev/null || { echo "error: jq not found" >&2; exit 1; }
@@ -57,11 +57,11 @@ cat <<EOF
   1. Retrieve the connection string (Cloud Console → Connect, or):
        ccloud cluster sql "${CLUSTER_NAME}" --connection-url
   2. Export it and apply the schema:
-       export RETRACE_DATABASE_URL="postgresql://<user>:<pass>@<host>:26257/${DB_NAME}?sslmode=verify-full"
-       uv run python -m retrace.db.migrate
+       export BACKCAST_DATABASE_URL="postgresql://<user>:<pass>@<host>:26257/${DB_NAME}?sslmode=verify-full"
+       uv run python -m backcast.db.migrate
   3. Store it for the Lambdas:
-       aws secretsmanager create-secret --name retrace/database-url --secret-string "\$RETRACE_DATABASE_URL"
+       aws secretsmanager create-secret --name backcast/database-url --secret-string "\$BACKCAST_DATABASE_URL"
 
   Tip: for CI/agents, create a scoped service account and use its key instead of interactive auth:
-       ccloud service-account create retrace-ci --description "Retrace CI" -o json
+       ccloud service-account create backcast-ci --description "Backcast CI" -o json
 EOF

@@ -22,7 +22,7 @@ _engine: MemoryEngine | None = None
 @lru_cache(maxsize=1)
 def get_database_url() -> str:
     """Resolve the CockroachDB DSN, from Secrets Manager if configured, else env."""
-    secret_id = os.environ.get("RETRACE_DATABASE_SECRET")
+    secret_id = os.environ.get("BACKCAST_DATABASE_SECRET")
     if not secret_id:
         return get_settings().database_url
 
@@ -37,7 +37,7 @@ def get_database_url() -> str:
     if not isinstance(data, dict):
         return raw
 
-    url = data.get("url") or data.get("RETRACE_DATABASE_URL") or raw
+    url = data.get("url") or data.get("BACKCAST_DATABASE_URL") or raw
     if not isinstance(url, str):
         return raw
 
@@ -45,7 +45,7 @@ def get_database_url() -> str:
     # sslmode=verify-full without baking a cluster-specific cert into the image.
     ca_cert = data.get("ca_cert")
     if isinstance(ca_cert, str) and ca_cert.strip():
-        cert_path = "/tmp/retrace-root.crt"
+        cert_path = "/tmp/backcast-root.crt"
         Path(cert_path).write_text(ca_cert)
         if "sslrootcert=" not in url:
             url += ("&" if "?" in url else "?") + f"sslrootcert={cert_path}"

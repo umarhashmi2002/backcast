@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from retrace.agent.llm import (
+from backcast.agent.llm import (
     LLMResponse,
     Message,
     ScriptedLLM,

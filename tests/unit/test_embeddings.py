@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import math
 
-from retrace.memory.embeddings import HashEmbedder
+from backcast.memory.embeddings import HashEmbedder
 
 
 def _dot(a: list[float], b: list[float]) -> float:

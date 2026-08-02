@@ -7,7 +7,7 @@ tolerated so a partially-applied migration can be safely re-run.
 
 Usage::
 
-    python -m retrace.db.migrate
+    python -m backcast.db.migrate
 """
 
 from __future__ import annotations
@@ -38,7 +38,7 @@ _IDENT_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 
 def find_migrations_dir() -> Path:
     """Locate the ``db/migrations`` directory (env override, else search up)."""
-    if env := os.getenv("RETRACE_MIGRATIONS_DIR"):
+    if env := os.getenv("BACKCAST_MIGRATIONS_DIR"):
         return Path(env)
     cwd = Path.cwd()
     for base in (cwd, *cwd.parents):

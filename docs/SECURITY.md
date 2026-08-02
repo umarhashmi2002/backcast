@@ -1,6 +1,6 @@
 # Security & product-readiness
 
-Retrace is designed so an *autonomous* agent can be trusted to act. That requires more than a working
+Backcast is designed so an *autonomous* agent can be trusted to act. That requires more than a working
 happy path — it requires safe defaults, least privilege, and provable behavior when things go wrong.
 
 ## Access control

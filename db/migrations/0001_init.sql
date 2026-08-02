@@ -1,5 +1,5 @@
 -- =====================================================================
--- Retrace — initial schema
+-- Backcast — initial schema
 --
 -- One temporal system of record for an SRE Incident Commander agent:
 --   * operational incident state (strongly consistent),

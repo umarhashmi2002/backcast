@@ -1,4 +1,4 @@
-# Retrace — developer workflow
+# Backcast — developer workflow
 # Run `make help` for the list of targets.
 
 .DEFAULT_GOAL := help
@@ -43,13 +43,13 @@ db-down: ## Stop and remove the local CockroachDB
 	docker compose down -v
 
 db-migrate: ## Apply the schema to the configured database
-	uv run python -m retrace.db.migrate
+	uv run python -m backcast.db.migrate
 
 seed: ## Load synthetic incident history for the demo
 	uv run python scripts/load_seed_data.py
 
 demo: ## Narrate all five memory mechanisms against the database
-	uv run retrace demo
+	uv run backcast demo
 
 race-demo: ## Action-lease concurrency + crash-safety demo (25 workers, crash & resume)
 	uv run python scripts/concurrency_demo.py

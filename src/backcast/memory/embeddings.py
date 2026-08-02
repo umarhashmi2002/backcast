@@ -4,7 +4,7 @@
 dims by default). ``HashEmbedder`` is a dependency-free, deterministic fallback
 for offline development and CI — it uses the hashing trick so shared tokens
 produce correlated vectors, but it is NOT semantically meaningful. Select the
-provider by setting ``RETRACE_EMBEDDING_MODEL_ID`` (use ``hash`` for offline).
+provider by setting ``BACKCAST_EMBEDDING_MODEL_ID`` (use ``hash`` for offline).
 """
 
 from __future__ import annotations

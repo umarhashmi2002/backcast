@@ -8,8 +8,8 @@ from __future__ import annotations
 
 import pytest
 
-from retrace.agent import IncidentCommander, LLMResponse, ScriptedLLM, ToolUse
-from retrace.memory import MemoryEngine
+from backcast.agent import IncidentCommander, LLMResponse, ScriptedLLM, ToolUse
+from backcast.memory import MemoryEngine
 
 pytestmark = pytest.mark.integration
 

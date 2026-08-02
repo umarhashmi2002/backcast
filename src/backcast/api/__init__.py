@@ -1,9 +1,9 @@
-"""AWS Lambda handlers for Retrace.
+"""AWS Lambda handlers for Backcast.
 
 Each module exposes a ``handler(event, context)`` entry point:
-  * :mod:`retrace.api.ingest`      — alert webhook -> incident (idempotent)
-  * :mod:`retrace.api.commander`   — one Incident Commander turn (Bedrock)
-  * :mod:`retrace.api.consolidate` — scheduled evidence-preserving consolidation
+  * :mod:`backcast.api.ingest`      — alert webhook -> incident (idempotent)
+  * :mod:`backcast.api.commander`   — one Incident Commander turn (Bedrock)
+  * :mod:`backcast.api.consolidate` — scheduled evidence-preserving consolidation
 """
 
 from __future__ import annotations

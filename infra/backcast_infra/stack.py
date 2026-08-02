@@ -1,4 +1,4 @@
-"""The Retrace AWS stack.
+"""The Backcast AWS stack.
 
 Serverless and cost-frugal: three container Lambdas (ingest / commander /
 consolidate) share one image, reason with Amazon Bedrock, store artifacts in S3,
@@ -51,7 +51,7 @@ _BEDROCK_MODEL_ID = "us.anthropic.claude-sonnet-5"
 _EMBEDDING_MODEL_ID = "amazon.titan-embed-text-v2:0"
 
 
-class RetraceStack(Stack):
+class BackcastStack(Stack):
     def __init__(self, scope: Construct, construct_id: str, **kwargs: object) -> None:
         super().__init__(scope, construct_id, **kwargs)
 
@@ -69,24 +69,24 @@ class RetraceStack(Stack):
 
         # --- Secrets Manager: the CockroachDB DSN ----------------------------
         # Created with a placeholder; set the real value after deploy:
-        #   aws secretsmanager put-secret-value --secret-id retrace/database-url \
-        #       --secret-string '{"url":"postgresql://...:26257/retrace?sslmode=verify-full"}'
+        #   aws secretsmanager put-secret-value --secret-id backcast/database-url \
+        #       --secret-string '{"url":"postgresql://...:26257/backcast?sslmode=verify-full"}'
         db_secret = sm.Secret(
             self,
             "DbSecret",
-            secret_name="retrace/database-url",
-            description="CockroachDB DSN used by Retrace Lambdas",
+            secret_name="backcast/database-url",
+            description="CockroachDB DSN used by Backcast Lambdas",
             secret_string_value=SecretValue.unsafe_plain_text('{"url":"REPLACE_ME"}'),
         )
 
         model_id = self.node.try_get_context("bedrock_model_id") or _BEDROCK_MODEL_ID
         common_env = {
-            "RETRACE_ENV": "prod",
-            "RETRACE_LOG_LEVEL": "INFO",
-            "RETRACE_DATABASE_SECRET": db_secret.secret_name,
-            "RETRACE_ARTIFACT_BUCKET": artifacts.bucket_name,
-            "RETRACE_BEDROCK_MODEL_ID": model_id,
-            "RETRACE_EMBEDDING_MODEL_ID": _EMBEDDING_MODEL_ID,
+            "BACKCAST_ENV": "prod",
+            "BACKCAST_LOG_LEVEL": "INFO",
+            "BACKCAST_DATABASE_SECRET": db_secret.secret_name,
+            "BACKCAST_ARTIFACT_BUCKET": artifacts.bucket_name,
+            "BACKCAST_BEDROCK_MODEL_ID": model_id,
+            "BACKCAST_EMBEDDING_MODEL_ID": _EMBEDDING_MODEL_ID,
         }
 
         def make_fn(name: str, handler: str, memory: int, timeout_s: int) -> lambda_.DockerImageFunction:
@@ -105,9 +105,9 @@ class RetraceStack(Stack):
                 environment=common_env,
             )
 
-        ingest_fn = make_fn("IngestFn", "retrace.api.ingest.handler", 512, 30)
-        commander_fn = make_fn("CommanderFn", "retrace.api.commander.handler", 1024, 120)
-        consolidate_fn = make_fn("ConsolidateFn", "retrace.api.consolidate.handler", 512, 300)
+        ingest_fn = make_fn("IngestFn", "backcast.api.ingest.handler", 512, 30)
+        commander_fn = make_fn("CommanderFn", "backcast.api.commander.handler", 1024, 120)
+        consolidate_fn = make_fn("ConsolidateFn", "backcast.api.consolidate.handler", 512, 300)
         functions = [ingest_fn, commander_fn, consolidate_fn]
 
         # --- IAM: least privilege per function -------------------------------
@@ -160,7 +160,7 @@ class RetraceStack(Stack):
                 alarm_description=f"{fn.node.id} reported errors",
             )
 
-        dashboard = cw.Dashboard(self, "Dashboard", dashboard_name="Retrace")
+        dashboard = cw.Dashboard(self, "Dashboard", dashboard_name="Backcast")
         dashboard.add_widgets(
             cw.GraphWidget(title="Invocations", left=[f.metric_invocations() for f in functions]),
             cw.GraphWidget(title="Errors", left=[f.metric_errors() for f in functions]),

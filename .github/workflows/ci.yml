@@ -34,7 +34,7 @@ jobs:
     name: integration (live CockroachDB)
     runs-on: ubuntu-latest
     env:
-      RETRACE_DATABASE_URL: postgresql://root@localhost:26257/retrace?sslmode=disable
+      BACKCAST_DATABASE_URL: postgresql://root@localhost:26257/backcast?sslmode=disable
     steps:
       - uses: actions/checkout@v4
       - name: Install uv
@@ -54,6 +54,6 @@ jobs:
             sleep 2
           done
       - name: Migrate schema
-        run: uv run python -m retrace.db.migrate
+        run: uv run python -m backcast.db.migrate
       - name: Integration tests
         run: uv run pytest -m integration

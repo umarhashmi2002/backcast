@@ -1,12 +1,12 @@
 <div align="center">
 
-# 🧠 Retrace
+# 🧠 Backcast
 
 ### The on-call agent that can prove what it knew, and when.
 
 **Agentic memory as one transactional, temporal system of record — on CockroachDB, serverless on AWS.**
 
-[![CI](https://github.com/umarhashmi2002/retrace/actions/workflows/ci.yml/badge.svg)](https://github.com/umarhashmi2002/retrace/actions/workflows/ci.yml)
+[![CI](https://github.com/umarhashmi2002/backcast/actions/workflows/ci.yml/badge.svg)](https://github.com/umarhashmi2002/backcast/actions/workflows/ci.yml)
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](./LICENSE)
 [![Python 3.13](https://img.shields.io/badge/python-3.13-blue.svg)](https://www.python.org)
 [![CockroachDB](https://img.shields.io/badge/CockroachDB-25.2%2B-6933FF.svg)](https://www.cockroachlabs.com)
@@ -18,8 +18,8 @@
 
 ---
 
-> **At 03:14, Retrace believed a traffic surge was causing the outage. At 03:17, a deploy
-> correlation flipped its conclusion to a connection leak.** Retrace can reconstruct *both*
+> **At 03:14, Backcast believed a traffic surge was causing the outage. At 03:17, a deploy
+> correlation flipped its conclusion to a connection leak.** Backcast can reconstruct *both*
 > belief states exactly, explain which evidence changed its mind, and prove the rollback was
 > justified — **without using anything it learned later.**
 >
@@ -28,7 +28,7 @@
 > and the rollback never runs twice.**
 
 Those two paragraphs are things a chatbot-with-a-vector-store physically cannot do. They are the
-product. Every mechanism below is exercised by the test suite and by `retrace demo`, live against
+product. Every mechanism below is exercised by the test suite and by `backcast demo`, live against
 CockroachDB 25.2.
 
 ## Why an agent needs a *temporal* memory, not a vector cache
@@ -37,7 +37,7 @@ On-call engineers fight the same fires repeatedly, and post-incident reviews ask
 *"what did we know, and when did we know it?"* A stateless LLM copilot can't answer that — it forgets
 the moment the session ends, and a bolt-on vector store has no notion of *time* or *consistency*.
 
-Retrace treats **memory itself as the product**. Operational state, evidence, embeddings, beliefs, and
+Backcast treats **memory itself as the product**. Operational state, evidence, embeddings, beliefs, and
 decisions all live in **one** CockroachDB cluster, which unlocks five things no split
 operational-DB-plus-vector-store architecture can offer without building its own event-sourcing and
 version-synchronization layer:
@@ -51,7 +51,7 @@ version-synchronization layer:
 | 5 | **Permanent, tamper-evident provenance** | Audit that outlives the GC window | Append-only, **hash-chained** `event_ledger` + signed incident packages in S3 |
 
 > **Positioning, stated precisely:** a split operational/vector architecture requires separate
-> versioning and synchronization to reconstruct a consistent historical belief state. Retrace keeps
+> versioning and synchronization to reconstruct a consistent historical belief state. Backcast keeps
 > operational state, evidence, vectors, and decisions in **one temporal system of record** — so a
 > single, transactionally-consistent point-in-time view comes without maintaining two independently
 > synchronized stores.
@@ -61,7 +61,7 @@ version-synchronization layer:
 ```bash
 make bootstrap      # uv-managed venv + dev deps
 make db-up          # local CockroachDB (docker) + schema migration
-uv run retrace demo # narrate every mechanism, live against the database
+uv run backcast demo # narrate every mechanism, live against the database
 ```
 
 Abridged output:
@@ -151,40 +151,40 @@ See [`docs/ARCHITECTURE.md`](./docs/ARCHITECTURE.md) for the full design.
 
 ## Tools & services
 
-**CockroachDB tools** (hackathon requires ≥ 2 — Retrace meaningfully uses **all four**):
+**CockroachDB tools** (hackathon requires ≥ 2 — Backcast meaningfully uses **all four**):
 
-| Tool | How Retrace uses it |
+| Tool | How Backcast uses it |
 |------|---------------------|
 | **Distributed Vector Indexing (C-SPANN)** | `evidence`, `semantic_memory`, `procedural_memory` use `VECTOR(1024)` columns with C-SPANN indexes (org-prefixed for tenant pre-filtering) for ANN recall. |
 | **Managed MCP Server** | The agent introspects and reads memory through the read-only-by-default MCP endpoint — safe, audited, no custom proxy. |
 | **ccloud CLI** | Cluster / database / service-account provisioning is scripted with `ccloud ... -o json` (see [`scripts/bootstrap_cockroach.sh`](./scripts/bootstrap_cockroach.sh)). |
 | **Agent Skills Repo** | `cockroachlabs/cockroachdb-skills` is used in the dev loop for schema / performance / security review. |
 
-**AWS services** (requires ≥ 1 — Retrace uses several): Amazon **Bedrock** (Claude reasoning + Titan
+**AWS services** (requires ≥ 1 — Backcast uses several): Amazon **Bedrock** (Claude reasoning + Titan
 embeddings) · AWS **Lambda** (agent execution, container images) · Amazon **S3** (artifacts) ·
 **Lambda Function URLs** · **EventBridge** (consolidation schedule) · **Secrets Manager** ·
 **CloudWatch** (alarms + dashboard) — all provisioned with the **AWS CDK** in Python.
 
 ## How it maps to the judging criteria
 
-| Criterion | How Retrace delivers |
+| Criterion | How Backcast delivers |
 |-----------|----------------------|
 | **Agentic Memory Design** | Production-grade memory: immutable evidence at scale, time-versioned beliefs, transactional action state, and vectors — one system, no ETL, no consistency gaps. |
 | **Technological Implementation** | C-SPANN vector indexes, `AS OF SYSTEM TIME`, serializable action leases, Row-Level TTL, hash chains — used correctly and safely. Typed (`mypy --strict`), tested (unit + live-DB integration), CI-gated. |
-| **Real-World Impact** | On-call is universal and expensive. Retrace compounds institutional knowledge and makes autonomous remediation *safe* enough to trust. |
+| **Real-World Impact** | On-call is universal and expensive. Backcast compounds institutional knowledge and makes autonomous remediation *safe* enough to trust. |
 | **Product Readiness** | Least-privilege IAM, secrets in Secrets Manager, single-owner action leases + idempotency + crash takeover, tamper-evident audit, structured logs, CloudWatch. See [`docs/SECURITY.md`](./docs/SECURITY.md). |
 | **Creativity & Originality** | Temporal belief reconstruction + evidence-linked belief revision + crash-safe action coordination — a genuinely novel use of a distributed temporal database as agent memory. |
 
 ## Repository layout
 
 ```text
-retrace/
-├── src/retrace/
+backcast/
+├── src/backcast/
 │   ├── memory/     # ⭐ engine: evidence · beliefs · temporal · leases · ledger · incidents
 │   ├── agent/      # SRE Incident Commander (Bedrock Claude + tools)  [in progress]
 │   ├── api/        # AWS Lambda handlers (ingest · commander · consolidate)  [in progress]
 │   ├── db/         # CockroachDB connection + idempotent migration runner
-│   └── cli.py      # `retrace demo`, `retrace migrate`
+│   └── cli.py      # `backcast demo`, `backcast migrate`
 ├── db/migrations/  # fully-commented SQL schema (vectors, TTL, hash chain, leases)
 ├── infra/          # AWS CDK app (Python)  [in progress]
 ├── scripts/        # ccloud bootstrap · seed data

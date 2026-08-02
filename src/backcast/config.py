@@ -1,6 +1,6 @@
 """Runtime configuration, loaded from environment variables (and ``.env`` locally).
 
-All settings are prefixed ``RETRACE_`` except ``AWS_REGION``, which follows the
+All settings are prefixed ``BACKCAST_`` except ``AWS_REGION``, which follows the
 standard AWS convention so the same value drives boto3.
 """
 
@@ -16,19 +16,19 @@ class Settings(BaseSettings):
     """Typed application settings."""
 
     model_config = SettingsConfigDict(
-        env_prefix="RETRACE_",
+        env_prefix="BACKCAST_",
         env_file=".env",
         env_file_encoding="utf-8",
         extra="ignore",
     )
 
     # --- CockroachDB -------------------------------------------------------
-    database_url: str = "postgresql://root@localhost:26257/retrace?sslmode=disable"
+    database_url: str = "postgresql://root@localhost:26257/backcast?sslmode=disable"
 
     # --- AWS / Bedrock -----------------------------------------------------
     aws_region: str = Field(
         default="us-east-1",
-        validation_alias=AliasChoices("AWS_REGION", "RETRACE_AWS_REGION"),
+        validation_alias=AliasChoices("AWS_REGION", "BACKCAST_AWS_REGION"),
     )
     bedrock_model_id: str = "us.anthropic.claude-sonnet-5"
     embedding_model_id: str = "amazon.titan-embed-text-v2:0"

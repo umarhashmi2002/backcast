@@ -8,10 +8,10 @@ from uuid import uuid4
 import psycopg
 import pytest
 
-from retrace.config import Settings
-from retrace.db import migrate
-from retrace.db.connection import connect
-from retrace.memory import HashEmbedder, MemoryEngine
+from backcast.config import Settings
+from backcast.db import migrate
+from backcast.db.connection import connect
+from backcast.memory import HashEmbedder, MemoryEngine
 
 
 @pytest.fixture(scope="session", autouse=True)

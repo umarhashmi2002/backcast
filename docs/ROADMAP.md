@@ -9,7 +9,7 @@ Deadline: **Aug 18, 2026** (CockroachDB × AWS Agentic Memory Hackathon).
   Row-Level-TTL working memory. C-SPANN vector indexes. Idempotent migration runner.
 - Memory engine: `EvidenceStore`, `BeliefStore`, `TemporalReconstructor`, `ActionLeaseCoordinator`,
   `EventLedger`, `IncidentStore`, embeddings (Bedrock Titan + offline hash).
-- **All five headline mechanisms proven** by tests + `retrace demo` on CockroachDB 25.2.
+- **All five headline mechanisms proven** by tests + `backcast demo` on CockroachDB 25.2.
 - **SRE Incident Commander agent** — Bedrock Converse tool-loop (recall → beliefs → action lease),
   with an offline scripted LLM so the whole loop is tested in CI without AWS.
 - **Long-term memory + evidence-preserving consolidation** — `SemanticStore`, `ProceduralStore`, and

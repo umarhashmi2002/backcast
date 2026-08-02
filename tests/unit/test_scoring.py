@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from retrace.memory.scoring import cosine_from_l2, evidence_score, recency_weight
+from backcast.memory.scoring import cosine_from_l2, evidence_score, recency_weight
 
 
 def test_cosine_from_l2_bounds() -> None:

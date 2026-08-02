@@ -3,7 +3,7 @@
 services:
   crdb:
     image: cockroachdb/cockroach:latest-v25.2
-    container_name: retrace-crdb
+    container_name: backcast-crdb
     command: start-single-node --insecure --store=type=mem,size=1GiB
     ports:
       - "26257:26257" # SQL

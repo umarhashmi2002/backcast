@@ -4,7 +4,7 @@
 ```bash
 make bootstrap        # uv venv + dev deps
 make db-up            # local CockroachDB (docker) + migration
-uv run retrace demo   # offline embeddings; proves every mechanism
+uv run backcast demo   # offline embeddings; proves every mechanism
 make test             # unit tests
 make test-integration # live-DB integration tests
 ```
@@ -14,12 +14,12 @@ make test-integration # live-DB integration tests
 1. Create a free cluster at <https://cockroachlabs.cloud> (no credit card required), or provision one
    with the ccloud CLI:
    ```bash
-   ./scripts/bootstrap_cockroach.sh          # creates cluster + service account + `retrace` DB
+   ./scripts/bootstrap_cockroach.sh          # creates cluster + service account + `backcast` DB
    ```
 2. Export the connection string and apply the schema:
    ```bash
-   export RETRACE_DATABASE_URL="postgresql://<user>:<pass>@<host>:26257/retrace?sslmode=verify-full"
-   uv run python -m retrace.db.migrate
+   export BACKCAST_DATABASE_URL="postgresql://<user>:<pass>@<host>:26257/backcast?sslmode=verify-full"
+   uv run python -m backcast.db.migrate
    ```
 3. **Managed MCP server (optional, for agent introspection):** in the Cloud Console, select the
    cluster → copy the MCP config snippet → paste into Claude Code / Cursor. It is read-only by default.
@@ -41,8 +41,8 @@ uv run cdk bootstrap        # first time per account/region only
 uv run cdk deploy           # prints IngestUrl / CommanderUrl / DatabaseSecretName
 
 # 2. Put the real CockroachDB DSN into the secret CDK created:
-aws secretsmanager put-secret-value --secret-id retrace/database-url \
-  --secret-string "{\"url\":\"$RETRACE_DATABASE_URL\"}"
+aws secretsmanager put-secret-value --secret-id backcast/database-url \
+  --secret-string "{\"url\":\"$BACKCAST_DATABASE_URL\"}"
 
 # 3. Smoke test (use the IngestUrl from the deploy output):
 curl -sX POST "$INGEST_URL" -d '{"org_id":"demo","fingerprint":"am-1","service":"payments-api"}'
@@ -54,13 +54,13 @@ serverless/pay-per-use — Bedrock per-token, Lambda per-invoke, S3 per-GB — k
 comfortably inside AWS free-tier credits.
 
 ## Configuration
-All settings are environment variables (see [`.env.example`](../.env.example)); prefix `RETRACE_`
-except `AWS_REGION`. Key ones: `RETRACE_DATABASE_URL`, `RETRACE_BEDROCK_MODEL_ID`,
-`RETRACE_EMBEDDING_MODEL_ID` (`hash` for offline), `RETRACE_ARTIFACT_BUCKET`.
+All settings are environment variables (see [`.env.example`](../.env.example)); prefix `BACKCAST_`
+except `AWS_REGION`. Key ones: `BACKCAST_DATABASE_URL`, `BACKCAST_BEDROCK_MODEL_ID`,
+`BACKCAST_EMBEDDING_MODEL_ID` (`hash` for offline), `BACKCAST_ARTIFACT_BUCKET`.
 
 ## Teardown
 ```bash
 cd infra && uv run cdk destroy --all      # AWS
-ccloud cluster delete retrace-hackathon   # CockroachDB (if provisioned via ccloud)
+ccloud cluster delete backcast-hackathon   # CockroachDB (if provisioned via ccloud)
 make db-down                              # local
 ```

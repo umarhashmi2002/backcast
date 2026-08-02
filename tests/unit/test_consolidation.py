@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from retrace.memory.consolidation import LLMDistiller, RuleBasedDistiller, _extract_json
+from backcast.memory.consolidation import LLMDistiller, RuleBasedDistiller, _extract_json
 
 
 def test_rule_based_distiller_with_resolution() -> None:

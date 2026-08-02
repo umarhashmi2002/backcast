@@ -1,4 +1,4 @@
-"""MemoryEngine — the single facade over Retrace's CockroachDB memory layer."""
+"""MemoryEngine — the single facade over Backcast's CockroachDB memory layer."""
 
 from __future__ import annotations
 

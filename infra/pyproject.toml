@@ -1,7 +1,7 @@
 [project]
-name = "retrace-infra"
+name = "backcast-infra"
 version = "0.1.0"
-description = "AWS CDK app for Retrace (deployed separately from the runtime package)"
+description = "AWS CDK app for Backcast (deployed separately from the runtime package)"
 requires-python = ">=3.12"
 # Needs a recent CDK CLI (>= 2.1134) to read the cloud-assembly schema:
 #   npm i -g aws-cdk@latest

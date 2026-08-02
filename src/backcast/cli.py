@@ -1,7 +1,7 @@
-"""Retrace command-line interface.
+"""Backcast command-line interface.
 
-``retrace migrate``  Apply the database schema.
-``retrace demo``     Narrate every headline mechanism end-to-end against the
+``backcast migrate``  Apply the database schema.
+``backcast demo``     Narrate every headline mechanism end-to-end against the
                      configured CockroachDB (offline embeddings by default).
 """
 
@@ -44,7 +44,7 @@ def _run_demo(engine: MemoryEngine, org: str, embed_mode: str) -> None:
     print(
         textwrap.dedent(
             f"""
-            \033[1mRetrace — agentic memory on CockroachDB\033[0m
+            \033[1mBackcast — agentic memory on CockroachDB\033[0m
             org={org}  embeddings={embed_mode}
 
             Scenario: payments-api starts returning 5xx errors. The Incident
@@ -204,7 +204,7 @@ def _run_demo(engine: MemoryEngine, org: str, embed_mode: str) -> None:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(prog="retrace", description="Agentic memory on CockroachDB.")
+    parser = argparse.ArgumentParser(prog="backcast", description="Agentic memory on CockroachDB.")
     sub = parser.add_subparsers(dest="command", required=True)
 
     p_migrate = sub.add_parser("migrate", help="Apply the database schema.")

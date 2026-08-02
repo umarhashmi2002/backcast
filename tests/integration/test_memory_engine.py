@@ -7,10 +7,12 @@ and transactional action leases — plus vector recall.
 
 from __future__ import annotations
 
+import time
+
 import pytest
 
-from retrace.memory import MemoryEngine
-from retrace.memory.models import Evidence, EvidenceKind
+from backcast.memory import MemoryEngine
+from backcast.memory.models import Evidence, EvidenceKind
 
 pytestmark = pytest.mark.integration
 
@@ -83,6 +85,25 @@ def test_action_lease_single_owner(engine: MemoryEngine, org: str) -> None:
     lease = engine.leases.get(org, key)
     assert lease is not None
     assert lease["holder"] == won[0].holder
+
+
+def test_action_lease_fencing_rejects_stale_holder(engine: MemoryEngine, org: str) -> None:
+    iid = engine.incidents.create(org, "Outage", "payments-api")["id"]
+    key = f"rollback:{iid}"
+
+    first = engine.leases.claim(org, iid, key, holder="worker-A", ttl_seconds=1)
+    assert first.won
+    assert first.lease_id is not None
+    time.sleep(1.2)  # let the lease expire
+
+    taker = engine.leases.take_over_if_expired(org, key, holder="worker-B")
+    assert taker is not None
+    assert taker.lease_generation == first.lease_generation + 1
+
+    # The revived original holder (stale generation) is fenced out; the taker succeeds.
+    assert engine.leases.complete(first.lease_id, "worker-A", first.lease_generation) is False
+    assert taker.lease_id is not None
+    assert engine.leases.complete(taker.lease_id, "worker-B", taker.lease_generation) is True
 
 
 def test_evidence_recall_ranks_relevant_first(engine: MemoryEngine, org: str) -> None:

@@ -1,6 +1,6 @@
 # Architecture
 
-Retrace is an SRE Incident Commander whose **memory is a single CockroachDB cluster** and whose
+Backcast is an SRE Incident Commander whose **memory is a single CockroachDB cluster** and whose
 **runtime is AWS serverless**. The design goal is that operational state, evidence, embeddings,
 beliefs, and decisions never leave one transactional, temporal system of record.
 
@@ -19,7 +19,7 @@ beliefs, and decisions never leave one transactional, temporal system of record.
 
 A conventional stack splits an operational DB from a vector store. To answer *"what did the agent
 believe at 03:14?"* that stack must event-source its operational data **and** version its vectors
-**and** keep the two synchronized. Retrace gets a transactionally-consistent point-in-time view for
+**and** keep the two synchronized. Backcast gets a transactionally-consistent point-in-time view for
 free from CockroachDB:
 
 - **System-time travel** — `AS OF SYSTEM TIME <hlc>` reconstructs the exact committed state. Evidence

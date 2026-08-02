@@ -157,6 +157,7 @@ class LeaseClaim(BaseModel):
     status: LeaseStatus
     lease_id: UUID | None = None
     idempotency_key: str | None = None
+    lease_generation: int = 1
     existing_holder: str | None = None
 
 

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from retrace.memory.ledger import compute_entry_hash
+from backcast.memory.ledger import compute_entry_hash
 
 
 def test_hash_is_deterministic() -> None:

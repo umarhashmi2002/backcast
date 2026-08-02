@@ -6,8 +6,8 @@ from uuid import UUID
 
 import pytest
 
-from retrace.memory import MemoryEngine
-from retrace.memory.models import Evidence, EvidenceKind, IncidentStatus
+from backcast.memory import MemoryEngine
+from backcast.memory.models import Evidence, EvidenceKind, IncidentStatus
 
 pytestmark = pytest.mark.integration
 

@@ -17,9 +17,9 @@ from __future__ import annotations
 
 import argparse
 
-from retrace.config import Settings, get_settings
-from retrace.memory import MemoryEngine
-from retrace.memory.models import Evidence, EvidenceKind, IncidentStatus, Severity
+from backcast.config import Settings, get_settings
+from backcast.memory import MemoryEngine
+from backcast.memory.models import Evidence, EvidenceKind, IncidentStatus, Severity
 
 SEED_INCIDENTS = [
     {
@@ -27,7 +27,10 @@ SEED_INCIDENTS = [
         "title": "payments-api 5xx from DB connection pool exhaustion",
         "service": "payments-api",
         "evidence": [
-            (EvidenceKind.metric, "payments-api error rate 6%; DB connection pool at 98% utilization"),
+            (
+                EvidenceKind.metric,
+                "payments-api error rate 6%; DB connection pool at 98% utilization",
+            ),
             (EvidenceKind.deploy, "deploy v1.9.0 lowered the connection pool max size"),
         ],
         "hypothesis": "a deploy shrank the DB connection pool, causing exhaustion under load",
@@ -38,7 +41,10 @@ SEED_INCIDENTS = [
         "title": "checkout-service pods OOMKilled during peak",
         "service": "checkout-service",
         "evidence": [
-            (EvidenceKind.metric, "checkout-service memory climbing to the container limit, then restart"),
+            (
+                EvidenceKind.metric,
+                "checkout-service memory climbing to the container limit, then restart",
+            ),
             (EvidenceKind.log, "OOMKilled events on checkout-service pods every ~10 minutes"),
         ],
         "hypothesis": "a memory leak in the cart cache exhausts the container limit",
@@ -60,7 +66,10 @@ SEED_INCIDENTS = [
         "title": "search-service latency spike after index change",
         "service": "search-service",
         "evidence": [
-            (EvidenceKind.trace, "search-service p99 latency jumped 8x; full table scans in query plans"),
+            (
+                EvidenceKind.trace,
+                "search-service p99 latency jumped 8x; full table scans in query plans",
+            ),
             (EvidenceKind.deploy, "migration dropped a composite index the hot query relied on"),
         ],
         "hypothesis": "a migration dropped an index the primary search query depended on",
@@ -84,8 +93,11 @@ def main() -> None:
     try:
         for spec in SEED_INCIDENTS:
             row, created = engine.incidents.upsert(
-                org, str(spec["external_id"]), title=str(spec["title"]),
-                service=str(spec["service"]), severity=Severity.sev2,
+                org,
+                str(spec["external_id"]),
+                title=str(spec["title"]),
+                service=str(spec["service"]),
+                severity=Severity.sev2,
             )
             incident_id = row["id"]
             if not created:
@@ -113,7 +125,9 @@ def main() -> None:
             )
 
         print(f"\nDone — {seeded} new incident(s) consolidated into long-term memory.")
-        hits = engine.procedural.recall(org, "database connection pool exhausted after a deploy", top_k=1)
+        hits = engine.procedural.recall(
+            org, "database connection pool exhausted after a deploy", top_k=1
+        )
         if hits:
             print(f"Sanity recall → {hits[0].name}: {hits[0].steps[:60]}")
     finally:

@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-"""Concurrency + crash-safety demo for Retrace's action leases.
+"""Concurrency + crash-safety demo for Backcast's action leases.
 
 Two things a RAG cache fundamentally cannot do, shown live against CockroachDB:
 
@@ -20,9 +20,9 @@ import time
 from concurrent.futures import ThreadPoolExecutor
 from uuid import UUID, uuid4
 
-from retrace.config import Settings
-from retrace.db.connection import connect
-from retrace.memory import HashEmbedder, MemoryEngine
+from backcast.config import Settings
+from backcast.db.connection import connect
+from backcast.memory import HashEmbedder, MemoryEngine
 
 SETTINGS = Settings(embedding_model_id="hash")
 DEMO_TABLE = "demo_rollback_effects"
@@ -83,36 +83,55 @@ def crash_resume_demo(incident_id: UUID) -> None:
     _rule("CRASH · winner dies mid-rollback; standby resumes without double-executing")
     action_key = f"rollback:crash:{uuid4().hex[:8]}"
 
-    # Worker A wins with a short lease, applies the effect, then crashes before completing.
+    # Worker A wins with a short lease (generation 1), applies the effect, then crashes.
     a = _engine()
     claim = a.leases.claim(ORG, incident_id, action_key, holder="worker-A", ttl_seconds=2)
-    assert claim.won and claim.lease_id and claim.idempotency_key
-    a.leases.mark_executing(claim.lease_id)
+    assert claim.won
+    assert claim.lease_id is not None
+    assert claim.idempotency_key is not None
+    a.leases.mark_executing(claim.lease_id, "worker-A", claim.lease_generation)
     applied_a = _apply_rollback(a, claim.idempotency_key, "worker-A")
     print(
-        f"  worker-A won lease, applied rollback ({applied_a}), then \033[1mCRASHED\033[0m before completing"
+        f"  worker-A won lease (gen {claim.lease_generation}), applied rollback ({applied_a}), "
+        f"then \033[1mCRASHED\033[0m before completing"
     )
     a.close()  # simulate crash: connection lost, lease left in 'executing'
 
     print("  ...lease expires...")
     time.sleep(3)
 
-    # Standby worker B takes over the expired lease and finishes the job idempotently.
+    # Standby worker B takes over the expired lease (generation bumps to 2) and finishes.
     b = _engine()
     takeover = b.leases.take_over_if_expired(ORG, action_key, holder="worker-B", ttl_seconds=60)
-    assert takeover is not None and takeover.lease_id and takeover.idempotency_key
+    assert takeover is not None
+    assert takeover.lease_id is not None
+    assert takeover.idempotency_key is not None
     applied_b = _apply_rollback(b, takeover.idempotency_key, "worker-B")
-    b.leases.complete(takeover.lease_id, {"resumed_by": "worker-B"})
+    completed_b = b.leases.complete(
+        takeover.lease_id, "worker-B", takeover.lease_generation, {"by": "B"}
+    )
+    print(
+        f"  worker-B took over (gen {takeover.lease_generation}); re-applied rollback: {applied_b} "
+        f"(False = blocked by idempotency); completed: {completed_b}"
+    )
+
+    # Worker A "revives" and tries to finalize with its stale generation-1 token.
+    a2 = _engine()
+    fenced = a2.leases.complete(claim.lease_id, "worker-A", claim.lease_generation, {"by": "A"})
+    print(
+        f"  revived worker-A (gen {claim.lease_generation}) tried to finalize: accepted={fenced} "
+        f"\033[1m(fenced out)\033[0m"
+    )
+    assert fenced is False, "fencing failed: stale worker was allowed to finalize!"
+
     executions = b.conn.execute(
         f"SELECT count(*) AS c FROM {DEMO_TABLE} WHERE idempotency_key = %s",
         (claim.idempotency_key,),
     ).fetchone()
     count = int(executions["c"]) if executions else -1
-    print(
-        f"  worker-B took over the expired lease; re-applied rollback: {applied_b} (False = blocked)"
-    )
-    print(f"  rollback executed \033[1mexactly {count} time(s)\033[0m across the crash")
+    print(f"  rollback executed \033[1mexactly {count} time(s)\033[0m across crash + revival")
     assert count == 1, "idempotency failed to prevent double execution!"
+    a2.close()
     b.close()
 
 
@@ -123,7 +142,7 @@ def main() -> None:
     incident_id: UUID = setup.incidents.create(ORG, "payments-api 5xx spike", "payments-api")["id"]
     setup.close()
 
-    print(f"\n\033[1mRetrace — action lease concurrency + crash safety\033[0m  (org={ORG})")
+    print(f"\n\033[1mBackcast — action lease concurrency + crash safety\033[0m  (org={ORG})")
     race_demo(incident_id, n_workers)
     crash_resume_demo(incident_id)
     print(

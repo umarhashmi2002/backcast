@@ -5,7 +5,7 @@ from __future__ import annotations
 import base64
 import json
 
-from retrace.api.http import json_response, parse_body
+from backcast.api.http import json_response, parse_body
 
 
 def test_parse_body_json_string() -> None:

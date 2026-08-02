@@ -1,6 +1,6 @@
 # The memory model
 
-Retrace models memory the way a careful operator's mind works: a durable record of what happened, a
+Backcast models memory the way a careful operator's mind works: a durable record of what happened, a
 revisable set of beliefs about *why*, learned procedures for *what to do*, and a scratchpad that is
 safe to forget. All of it lives in CockroachDB.
 
@@ -16,7 +16,7 @@ significant event as an append-only, hash-linked entry, giving permanent, tamper
 Candidate explanations, and a **time-versioned** confidence over them. A confidence change appends a
 new `beliefs` row and closes the previous one (`valid_until`, `superseded_by`) — the full revision
 history is preserved. `provenance_edges` is a typed graph: `evidence —supports/contradicts→ hypothesis`,
-`action —verifies→ hypothesis`, `belief —supersedes→ belief`. This is what lets Retrace answer
+`action —verifies→ hypothesis`, `belief —supersedes→ belief`. This is what lets Backcast answer
 *"which evidence changed the agent's mind, and when?"*
 
 ### Semantic / Procedural — `semantic_memory`, `procedural_memory`
@@ -30,7 +30,7 @@ The live session scratchpad. The **only** tier with Row-Level TTL — it is disp
 ## Consolidation is evidence-preserving (on purpose)
 
 Naïvely asking an LLM to re-summarize memory after every interaction is dangerous: repeated rewriting
-of consolidated memory can drift and corrupt genuinely useful knowledge. Retrace therefore:
+of consolidated memory can drift and corrupt genuinely useful knowledge. Backcast therefore:
 
 - keeps **raw evidence immutable** — it is never rewritten;
 - runs consolidation **only on incident closure** (gated), not after every turn;
@@ -47,4 +47,4 @@ Vector indexes rank by raw distance; recall additionally blends **recency** and 
 memory) a decaying **retrieval score** and **importance**, so *what mattered* beats *what is merely
 nearest*. Because Titan v2 embeddings are L2-normalized, we use the default L2 op class with the
 `<->` operator — rank-identical to cosine and portable across all CockroachDB 25.2+ clusters.
-See [`src/retrace/memory/scoring.py`](../src/retrace/memory/scoring.py).
+See [`src/backcast/memory/scoring.py`](../src/backcast/memory/scoring.py).

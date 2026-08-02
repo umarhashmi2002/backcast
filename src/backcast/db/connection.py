@@ -51,7 +51,7 @@ def connect(dsn: str | None = None) -> Connection:
         dsn or settings.database_url,
         row_factory=dict_row,
         autocommit=False,
-        application_name="retrace",
+        application_name="backcast",
     )
     return conn
 
@@ -117,5 +117,5 @@ def admin_dsn(dsn: str, admin_db: str = "defaultdb") -> str:
 
 
 def target_database(dsn: str) -> str:
-    """Extract the target database name from a DSN (defaults to ``retrace``)."""
-    return str(conninfo_to_dict(dsn).get("dbname") or "retrace")
+    """Extract the target database name from a DSN (defaults to ``backcast``)."""
+    return str(conninfo_to_dict(dsn).get("dbname") or "backcast")
