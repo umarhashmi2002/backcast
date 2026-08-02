@@ -25,12 +25,23 @@ class IncidentStore:
         external_id: str | None = None,
         summary: str | None = None,
         labels: dict[str, Any] | None = None,
+        scenario: str | None = None,
     ) -> dict[str, Any]:
         row = self._conn.execute(
-            "INSERT INTO incidents (org_id, external_id, title, summary, service, severity, labels) "
-            "VALUES (%s, %s, %s, %s, %s, %s, %s) "
+            "INSERT INTO incidents "
+            "(org_id, external_id, title, summary, service, severity, labels, scenario) "
+            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s) "
             "RETURNING id, state_version, status, created_at",
-            (org_id, external_id, title, summary, service, severity.value, Json(labels or {})),
+            (
+                org_id,
+                external_id,
+                title,
+                summary,
+                service,
+                severity.value,
+                Json(labels or {}),
+                scenario,
+            ),
         ).fetchone()
         assert row is not None
         return row
@@ -87,7 +98,7 @@ class IncidentStore:
     def get(self, incident_id: UUID | str) -> dict[str, Any] | None:
         return self._conn.execute(
             "SELECT id, org_id, external_id, title, summary, service, severity, status, "
-            "state_version, resolution, created_at, resolved_at "
+            "state_version, resolution, scenario, created_at, resolved_at "
             "FROM incidents WHERE id = %s",
             (incident_id,),
         ).fetchone()

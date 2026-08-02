@@ -47,6 +47,13 @@ class MemoryEngine:
         self.procedural = ProceduralStore(self.conn, self.embedder, self.settings)
         self.consolidator = Consolidator(self, distiller)
 
+        # Counterfactual replay (rewind → fork → simulate → compare). Imported here
+        # to keep the module-load order memory → simulation (simulation only needs
+        # MemoryEngine as a type).
+        from ..simulation.branches import CounterfactualService
+
+        self.counterfactual = CounterfactualService(self)
+
     def close(self) -> None:
         if not self.conn.closed:
             self.conn.close()

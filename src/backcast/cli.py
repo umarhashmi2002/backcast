@@ -203,6 +203,80 @@ def _run_demo(engine: MemoryEngine, org: str, embed_mode: str) -> None:
     )
 
 
+def cmd_counterfactual(args: argparse.Namespace) -> None:
+    engine = MemoryEngine(settings=Settings(embedding_model_id="hash"))
+    try:
+        _run_counterfactual(engine, args.org)
+    finally:
+        engine.close()
+
+
+def _run_counterfactual(engine: MemoryEngine, org: str) -> None:
+    print(
+        f"\n\033[1mBackcast — counterfactual incident replay\033[0m  (org={org})\n\n"
+        "An on-call engineer hits a payments-api outage, restarts the service, and it recovers.\n"
+        "Backcast rewinds to the decision point, forks alternative remediations, simulates each\n"
+        "against a deterministic incident model, and shows the decision that should have been made."
+    )
+    incident = engine.incidents.create(
+        org,
+        "payments-api 5xx spike",
+        "payments-api",
+        external_id=f"cf-{uuid4().hex[:8]}",
+        scenario="db_pool_exhaustion",
+    )
+    iid: UUID = incident["id"]
+
+    engine.evidence.record(
+        Evidence(
+            org_id=org,
+            incident_id=iid,
+            kind=EvidenceKind.metric,
+            content="payments-api 5xx rising; DB connection pool at 98% after a deploy",
+        )
+    )
+    hypothesis = engine.beliefs.create_hypothesis(
+        org, iid, "a deploy shrank the DB connection pool"
+    )
+    assert hypothesis.id is not None
+    engine.beliefs.set_belief(
+        org, iid, hypothesis.id, 0.7, rationale="deploy correlated with onset"
+    )
+    fork_hlc = engine.temporal.capture_hlc()
+
+    # The ACTUAL decision: restart the service — it relieved the symptom, temporarily.
+    engine.incidents.set_status(iid, IncidentStatus.resolved, resolution="restarted the service")
+
+    _rule("REWIND → FORK → COMPARE  (outcomes computed deterministically, not by an LLM)")
+    report = engine.counterfactual.run(
+        org, iid, actual_remediations=["restart-service"], forked_at_hlc=fork_hlc
+    )
+
+    print(f"  forked at HLC {report.forked_at_hlc}   scenario={report.scenario}\n")
+    print(f"  {'branch':<20}{'score':>8}  {'result':<8}{'t(s)':>6}{'risk':>6}   note")
+    for branch in sorted(report.branches, key=lambda b: b.outcome.score, reverse=True):
+        outcome = branch.outcome
+        result = "fixed" if outcome.recovered else ("recurs" if outcome.recurred else "no fix")
+        tags = []
+        if branch.branch_id == report.best.branch_id:
+            tags.append("★ BEST")
+        if branch.is_actual:
+            tags.append("← actual")
+        print(
+            f"  {branch.label:<20}{outcome.score:>8}  {result:<8}"
+            f"{outcome.time_to_recovery_s:>6.0f}{outcome.risk:>6}   {'  '.join(tags)}"
+        )
+
+    print()
+    _kv("decision regret (best - actual)", f"\033[1m{report.decision_regret}\033[0m")
+    if report.lesson:
+        _kv("lesson promoted", report.lesson)
+    print(
+        "\n\033[1;32mThe agent's memory now knows the better remediation — "
+        "verified by simulation, not guessed.\033[0m\n"
+    )
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(prog="backcast", description="Agentic memory on CockroachDB.")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -216,6 +290,10 @@ def main() -> None:
         "--bedrock", action="store_true", help="Use Bedrock Titan embeddings (needs AWS creds)."
     )
     p_demo.set_defaults(func=cmd_demo)
+
+    p_cf = sub.add_parser("counterfactual", help="Rewind an incident, fork alternatives, compare.")
+    p_cf.add_argument("--org", default="demo", help="Tenant id to use (default: demo).")
+    p_cf.set_defaults(func=cmd_counterfactual)
 
     args = parser.parse_args()
     args.func(args)
