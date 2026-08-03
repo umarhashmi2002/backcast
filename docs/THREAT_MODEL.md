@@ -32,7 +32,7 @@ flowchart LR
 | TB4 | Lambda | KMS | AWS internal | IAM policy scoped to the one signing key + `Sign`/`Verify`/`GetPublicKey` |
 | TB5 | Lambda | Secrets Manager | AWS internal | IAM policy scoped to the specific secrets |
 | TB6 | Lambda | Bedrock | AWS internal | IAM policy scoped to specific model families |
-| TB7 | Judge / operator | webapp | HTTPS | **Open** (a read-only demo surface — see T10) |
+| TB7 | Judge / operator | webapp | HTTPS | **Open** (a public presentation surface whose `/api/*` calls mutate demo data + invoke Bedrock — see T10) |
 
 ## 2. Threats
 
@@ -72,17 +72,25 @@ A compromised Lambda with excessive permissions could reach resources beyond its
 ### T9 — Denial of service (alert flood)  (I: medium · L: medium)
 A flood of (even validly signed) alerts could drive Bedrock/DB cost and exhaust concurrency.
 
-### T10 — Data exposure via the open demo surface  (I: medium · L: medium)
-The webapp and commander URLs are open for judging convenience; an abuser could drive cost or read
-demo data.
+### T10 — Public presentation surface backed by isolated, rate-limited demo data  (I: medium · L: high)
+The webapp and commander URLs are open for judging convenience, and the webapp's `/api/*` operations
+**mutate data and invoke Bedrock** (counterfactual, agent, race) — they are **not** read-only. An
+abuser with the URL could drive Bedrock/Lambda/DB cost or write demo rows. This is the highest residual
+risk in the current deployment; see [§6](#6-residual-risk--future-work) for the reduction plan.
 
 ## 3. Mitigations
 
 ### 3.1 HMAC webhook authentication + replay window  (mitigates T1, T9)
-The ingress verifies an HMAC-SHA256 signature over `"<unix_ts>." + body` using a Secrets-Manager
-secret, and rejects any request whose timestamp is older than 300 s. Unsigned/invalid ⇒ `401`
-(`api/security.py`, property-tested in `tests/unit/test_properties.py`). API Gateway adds throttling
-(rate 20 / burst 10) in front.
+The ingress verifies an HMAC-SHA256 signature over the **exact raw request bytes** (`"<unix_ts>." +
+body`) using a Secrets-Manager secret and a **constant-time** comparison, and rejects any request
+whose timestamp is older than 300 s. Unsigned/invalid ⇒ `401` (`api/security.py`, property-tested in
+`tests/unit/test_properties.py`). API Gateway adds throttling (rate 20 / burst 10) in front — note AWS
+documents throttles as best-effort targets, **not** guaranteed cost ceilings. The 300 s window bounds
+replay *duration* but does not by itself stop a valid request being replayed inside the window;
+repeated processing is prevented by **incident idempotency** (`UNIQUE(org_id, external_id)`), so a
+replay resolves to the same incident rather than a new one. (A dedicated `webhook_receipts`
+`UNIQUE(source_id, signature_digest)` table would make within-window single-processing explicit — a
+listed hardening.)
 
 ### 3.2 Secrets isolation  (mitigates T2)
 The DSN and cluster CA cert live in Secrets Manager (`backcast/database-url`), not in the image or
@@ -100,9 +108,11 @@ model families + inference profiles. KMS permission is scoped to the single sign
 `event_ledger` is an append-only sha256 hash chain per incident; `verify()` detects any edit that
 doesn't rewrite every subsequent hash. Because a DBA could rewrite the whole chain, the consolidate
 Lambda periodically signs the ledger **root hash** with a KMS asymmetric key (`ECDSA_SHA_256`) into
-`ledger_checkpoints`. The private key never leaves KMS, so a signed checkpoint proves the root hash
-existed at signing time — tamper *evidence* that survives even a full-DB rewrite. Optional S3 Object
-Lock export gives WORM retention.
+`ledger_checkpoints`. The private key never leaves KMS, so a signed checkpoint proves the root hash was
+**authenticated by the project's KMS key** and is unchanged — tamper *evidence* that survives even a
+full-DB rewrite. The signature is **not** an independent timestamp; external timing/persistence comes
+from the **CloudTrail** signing event and the (optionally Object-Lock-protected) **S3** object. S3
+Object Lock export is designed but **not enabled** in the current demo.
 
 ### 3.5 Fencing tokens + idempotency + state verification  (mitigates T4)
 Action leases use `UNIQUE(org_id, action_key)` (one owner), a `lease_generation` fencing token
@@ -125,16 +135,24 @@ manufacture a favorable outcome. Scoring is monotonic and bounded (property-test
 lesson reflects a real, reproducible ranking.
 
 ### 3.8 Untrusted-content handling  (mitigates T7)
-Alert/evidence text is treated as data, not instructions: tools have narrow, typed contracts and the
-agent's authority is bounded by the fenced-lease + (future) policy gate — it can *propose* an action,
-but executing a real external effect is gated, not implied by text in the context. The tool loop is
-bounded (≤ 12 steps) to cap runaway behavior.
+Prompt injection is **contained, not eliminated** — it remains a residual risk (a model can still be
+influenced by malicious text). Backcast limits *impact*: alert/evidence text is treated as data, not
+instructions; tools have narrow, typed contracts; remediation in the demo is **simulation-only**; the
+tool loop is bounded (≤ 12 steps); and action ownership is fenced. A real external action would
+additionally require a separate **deterministic authorization allowlist + human approval** (this policy
+gate is future work, not a current control). Practical hardening in place / cheap to add: validate
+every tool argument against the incident's known resources, reject unregistered service/action targets,
+and log the exact evidence IDs included in each model call.
 
-### 3.9 Throttling + scale-to-zero economics  (mitigates T9, T10)
-API Gateway throttling caps ingress rate; Lambda concurrency and Bedrock are pay-per-use so there is
-no idle attack surface; CloudWatch alarms surface error/cost spikes. The open demo surfaces are
-read-mostly and carry no secrets; for production they would move behind the same HMAC/JWT gate as the
-ingress.
+### 3.9 Concurrency ceiling, throttling + scale-to-zero economics  (mitigates T9, T10)
+This demo account's **total Lambda concurrency limit is 10**, so no more than 10 executions can run at
+once — a hard account-wide fan-out/cost ceiling. API Gateway throttling caps ingress rate (best-effort,
+not a hard cost ceiling); Lambda/Bedrock are pay-per-use so there is no idle attack surface; CloudWatch
+alarms surface error/cost spikes. Per-function **reserved concurrency** is wired in the CDK for accounts
+with a higher limit (it can't be set here — reserving any concurrency would drop unreserved below the
+required 10). The public surfaces are scoped to a disposable `demo` org and carry no secrets, but they
+**do** mutate data and invoke Bedrock; for production they'd move behind the same HMAC/JWT gate as the
+ingress, with per-session model-turn limits and AWS Budget alarms.
 
 ### 3.10 TLS everywhere  (mitigates MITM across TB1, TB3)
 All external transport is HTTPS; the CockroachDB connection uses `sslmode=verify-full` against the
@@ -176,11 +194,25 @@ flowchart TB
 
 ## 6. Residual risk & future work
 
-- The demo ingress secret is a single shared HMAC key; production would use per-source keys and
-  rotation.
-- The open commander/webapp surfaces are a hackathon convenience; production would gate them behind
-  the same authenticated ingress.
+- **Public demo surface (T10, highest residual risk).** The webapp `/api/*` calls mutate demo data and
+  invoke Bedrock without auth. Reduction plan, in priority order: gate the mutating/model endpoints
+  behind a server-side internal Lambda invoke (browser → webapp → internal handler, so the Commander
+  URL isn't called directly); scope every interactive op to a disposable `demo` org; add per-session
+  Bedrock-turn caps and AWS Budget alarms; periodically reset demo data. **Now in place:** demo-org
+  scoping and the account-wide 10-concurrency ceiling (a natural fan-out/cost cap); per-function
+  reserved concurrency is wired in the CDK for accounts whose limit permits it.
+- **Prompt injection is contained, not prevented** (see 3.8). Real live actions would require a
+  deterministic authorization allowlist + human approval — future work, not a current control.
+- **Verification provenance.** A simulation-backed winner is promoted as a *candidate* procedure, not a
+  production-verified one. A `verification_level` (`simulated → observed_once → observed_repeatedly →
+  human_approved`) and `origin` (`counterfactual_simulation | actual_incident | imported_runbook |
+  human_authored`) on procedural memory would make this explicit (planned).
+- The demo ingress secret is a single shared HMAC key; production would use per-source keys + rotation,
+  and an explicit `webhook_receipts` uniqueness table for within-window replay.
+- **Tenant isolation** is currently a tenant-scoped data model (`org_id` prefix + app filters), not
+  enforced isolation; production would add CockroachDB **row-level security** and per-service DB roles
+  (`backcast_ingest` / `commander` / `consolidate` / `web_readonly`) instead of one shared DSN.
 - Real remediation actions are simulated; wiring them to live cloud effects would add a policy engine
-  (allowlists, amount/scope limits, approval) in front of the fenced lease — the fencing + idempotency
+  (allowlists, scope limits, approval) in front of the fenced lease — the fencing + idempotency
   substrate is already in place.
-- S3 Object Lock export of signed checkpoints is designed but not enabled by default.
+- S3 Object Lock export of signed checkpoints is designed but not enabled in the current demo.

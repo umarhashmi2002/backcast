@@ -11,7 +11,8 @@ Raw signals the agent observed: metrics, logs, traces, deploys, human notes. **N
 deleted.** Each row carries `observed_at` (valid time) and `db_ts` (the commit HLC), and an optional
 `VECTOR(1024)` embedding indexed by C-SPANN for cross-incident recall. The ledger records every
 significant event as an append-only, hash-linked entry — tamper-evident within the database, with
-KMS-signed checkpoints exported to S3 Object Lock for durable integrity beyond the GC window.
+periodic **KMS-signed** root-hash checkpoints in `ledger_checkpoints` for integrity beyond a DBA
+(optional S3 Object Lock export is supported but not enabled in the current demo).
 
 ### Belief — `hypotheses`, `beliefs`, `provenance_edges`
 Candidate explanations, and a **time-versioned** confidence over them. A confidence change appends a

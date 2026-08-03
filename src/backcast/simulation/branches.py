@@ -170,8 +170,8 @@ class CounterfactualService:
     ) -> str:
         steps = " then ".join(best.remediations)
         statement = (
-            f"For '{scenario.true_cause}', the verified best remediation is '{steps}' "
-            f"(permanent fix; simulated score {best.outcome.score})."
+            f"For '{scenario.true_cause}', the best simulation-backed remediation is '{steps}' "
+            f"(permanent fix under the model; simulated score {best.outcome.score})."
         )
         procedure = self._engine.procedural.add(
             org_id,

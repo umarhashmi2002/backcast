@@ -38,9 +38,9 @@ REWIND → FORK → COMPARE   (outcomes computed deterministically, not by an LL
   actual (restart)       -0.36  recurs     60   0.1   ← what we actually did
   fork:wait               -0.10 no fix       0   0.0
 
-  decision regret (best − actual) = 1.24
-  lesson promoted → "For a deploy that shrank the DB pool, the verified best remediation is
-                     rollback-deploy (permanent fix)."
+  simulated decision regret (best − actual) = 1.24   ← under the deterministic model, not observed in prod
+  lesson promoted → "For a deploy that shrank the DB pool, the best simulation-backed remediation is
+                     rollback-deploy (permanent fix in the model)."
 ```
 
 That loop — *reconstruct the past, fork it, simulate alternatives, and learn which decision was
@@ -59,7 +59,7 @@ graph LR
     Cmd[Commander Lambda<br/>Bedrock Nova Pro] -->|recall · believe · act| DB
     Cmd -->|fenced action lease| Act[Remediation]
     DB -->|AS OF SYSTEM TIME| CF[Counterfactual replay]
-    CF -->|decision regret| Learn[Promote verified lesson]
+    CF -->|simulated regret| Learn[Promote best lesson<br/>simulation-verified]
     Learn --> DB
     Con[Consolidate Lambda] -->|KMS-signed checkpoint| DB
 ```
@@ -67,7 +67,7 @@ graph LR
 An alert becomes an incident; the **Commander** agent recalls similar past incidents (vector search),
 records evidence, revises time-versioned beliefs, and claims a **fenced action lease** before it acts.
 After resolution, Backcast **rewinds** to the decision point, **forks** alternative remediations,
-scores each with a deterministic model, and **promotes the verified best** back into memory. Every
+scores each with a deterministic model, and **promotes the best simulation-backed remediation** back into memory. Every
 step is written to a hash-chained ledger with periodic **KMS-signed checkpoints**.
 
 ## Live on AWS
@@ -207,7 +207,8 @@ flowchart LR
 7. **Resolve** — the incident's state machine advances; `state_version` bumps.
 8. **Consolidate** (scheduled) — distills the closed incident into semantic/procedural memory.
 9. **Counterfactual replay** — forks the incident and simulates alternatives.
-10. **Promote** — the verified best remediation becomes durable procedural memory.
+10. **Promote** — the best simulation-backed remediation is promoted as a *candidate* procedure
+    (marked simulation-verified — reproducible under the model, not yet observed in production).
 
 ### ① Counterfactual replay — rewind → fork → compare → learn
 
@@ -221,13 +222,15 @@ flowchart TB
   FK --> B3["restart-service"]
   FK --> B4["wait"]
   B1 & B2 & B3 & B4 --> M["Deterministic incident model<br/>(hidden true cause + defined effects)<br/>computes each outcome — the LLM never decides success"]
-  M --> C["Comparator<br/>rank by score → decision regret"]
-  C --> L["Promote best remediation<br/>→ procedural_memory (verified)"]
+  M --> C["Comparator<br/>rank by score → simulated decision regret"]
+  C --> L["Promote best remediation<br/>→ procedural_memory (simulation-verified)"]
 ```
 
 The model scores each branch on **recovery (permanent vs. temporary), time-to-recovery, unnecessary
-actions, risk, and cost**. *Decision regret* = `best.score − actual.score`. Persisted to
-`incident_branches`, `branch_outcomes`, and `simulation_runs`.
+actions, risk, and cost**. *Simulated decision regret* = `best.score − actual.score` — a
+**model-estimated** quantity (it proves which branch scores best *under the encoded scenario model*,
+not what production would have done). Persisted to `incident_branches`, `branch_outcomes`, and
+`simulation_runs`.
 
 ### ② Temporal reconstruction — the no-leak guarantee
 
@@ -410,11 +413,11 @@ backcast/
 
 ## Tools & services (hackathon requirements)
 
-**CockroachDB tools** (requires ≥ 2 — Backcast uses all four): **Distributed Vector Indexing
-(C-SPANN)** for evidence/semantic/procedural recall; **Managed MCP Server** (read-only, audited) for
-agent DB introspection; **ccloud CLI** for cluster/DB provisioning
-([`scripts/bootstrap_cockroach.sh`](./scripts/bootstrap_cockroach.sh)); the **Agent Skills** repo in
-the dev loop.
+**CockroachDB tools** (requires ≥ 2 — Backcast uses three at runtime): **Distributed Vector Indexing
+(C-SPANN)** for evidence/semantic/procedural recall; **ccloud CLI** for cluster/DB provisioning
+([`scripts/bootstrap_cockroach.sh`](./scripts/bootstrap_cockroach.sh)); and the **Agent Skills** repo
+in the dev loop. The **Managed MCP Server** was used during development for read-only DB inspection —
+a read-only "explain this incident" auditor over MCP is on the roadmap, not on the runtime agent path.
 
 **AWS services** (requires ≥ 1 — Backcast uses several): Amazon **Bedrock** (Nova Pro reasoning +
 Titan embeddings — Claude-ready once account access is enabled) · AWS **Lambda** (container images) ·
@@ -427,9 +430,9 @@ signing) · **API Gateway** (HMAC-verified, throttled ingress) — all via the *
 |-----------|----------------------|
 | **Agentic Memory Design** | Six memory tiers in one system: immutable evidence, versioned beliefs + provenance, transactional fenced actions, decayed long-term memory, and counterfactual branches — no ETL, no cross-store drift. |
 | **Technological Implementation** | Correct, precise use of `AS OF SYSTEM TIME`, C-SPANN vectors, fencing tokens, Row-Level TTL, hash chains. Typed (`mypy --strict`), tested (unit + property-based + live-DB integration), CI-gated. |
-| **Real-World Impact** | On-call is universal and expensive. Backcast compounds institutional knowledge *and* proves which decisions are actually best — then remembers them. |
+| **Real-World Impact** | On-call is universal and expensive. Backcast compounds institutional knowledge *and* compares decisions reproducibly under an explicit deterministic model — then remembers the best simulation-backed one. |
 | **Product Readiness** | Least-privilege IAM, Secrets Manager, fenced + idempotent actions, tamper-evident ledger (KMS-signed checkpoints), HMAC-verified throttled ingress, structured logs, alarms. See [`docs/SECURITY.md`](./docs/SECURITY.md). |
-| **Creativity & Originality** | Transactionally-consistent counterfactual replay of agent decisions, with decision regret and verified-lesson promotion — not generic incident recall. |
+| **Creativity & Originality** | Transactionally-consistent counterfactual replay of agent decisions, with *simulated* decision regret and simulation-verified-lesson promotion — not generic incident recall. |
 
 ## Real-world impact
 

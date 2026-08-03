@@ -88,8 +88,10 @@ word anywhere in the repo, it's defined here.
 - **Event ledger** — an append-only, per-incident log (`event_ledger`) of every significant event.
 - **Hash chain** — each ledger entry's `entry_hash = sha256(prev_hash ‖ seq ‖ event_type ‖ payload ‖
   actor)`, so any tampering that doesn't rewrite every later hash is detectable (**tamper-evident**).
-- **KMS-signed checkpoint** — a periodically-signed root hash written to **S3 Object Lock**, giving
-  tamper-evidence beyond a database administrator's reach.
+- **KMS-signed checkpoint** — a periodically-signed ledger root hash stored in `ledger_checkpoints`
+  (optionally exported to **S3 Object Lock** for WORM retention — not enabled in the demo), giving
+  tamper-evidence beyond a database administrator's reach. The signature authenticates the root hash;
+  timing/persistence come from CloudTrail + the S3 object, not the signature itself.
 
 ## Counterfactual replay
 

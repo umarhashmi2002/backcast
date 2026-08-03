@@ -98,7 +98,9 @@ class BackcastStack(Stack):
             "BACKCAST_EMBEDDING_MODEL_ID": _EMBEDDING_MODEL_ID,
         }
 
-        def make_fn(name: str, handler: str, memory: int, timeout_s: int) -> lambda_.DockerImageFunction:
+        def make_fn(
+            name: str, handler: str, memory: int, timeout_s: int, reserved: int | None = None
+        ) -> lambda_.DockerImageFunction:
             return lambda_.DockerImageFunction(
                 self,
                 name,
@@ -112,6 +114,11 @@ class BackcastStack(Stack):
                 memory_size=memory,
                 timeout=Duration.seconds(timeout_s),
                 environment=common_env,
+                # Optional per-function cap on the Bedrock-invoking, publicly-reachable functions.
+                # Disabled by default: this demo account's total concurrency limit is 10, and reserving
+                # any concurrency must leave >= 10 unreserved. Set `reserved=` on accounts with a higher
+                # limit (the account-wide limit of 10 is itself a hard fan-out/cost ceiling here).
+                reserved_concurrent_executions=reserved,
             )
 
         ingest_fn = make_fn("IngestFn", "backcast.api.ingest.handler", 512, 30)

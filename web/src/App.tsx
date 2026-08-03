@@ -64,11 +64,11 @@ function BranchBars({ r }: { r: CounterfactualResult }) {
       })}
       <div className="regret">
         <span className="n">{r.decision_regret.toFixed(2)}</span>
-        <span>decision regret (best − actual) — how much better the optimal call was</span>
+        <span>simulated decision regret (best − actual) — model-estimated, under the deterministic scenario</span>
       </div>
       {r.lesson && (
         <div className="lesson">
-          <b>Lesson promoted to memory →</b> {r.lesson}
+          <b>Lesson promoted (simulation-verified) →</b> {r.lesson}
         </div>
       )}
       {r.ledger_verified !== undefined && (

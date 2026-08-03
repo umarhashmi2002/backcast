@@ -3,7 +3,8 @@
 Backcast is an SRE Incident Commander whose **memory is a single CockroachDB cluster** and whose
 **runtime is AWS serverless**. The design goal is that operational state, evidence, embeddings,
 beliefs, actions, and counterfactual decisions never leave one transactional, temporal system of
-record — so the system can reconstruct any past belief state, prove which decision was best, and act
+record — so the system can reconstruct any past belief state, compare decisions reproducibly under an
+explicit deterministic model, and act
 autonomously without split-brain double-execution.
 
 This document is the deep-dive. For the narrative overview see the [README](../README.md); for the
@@ -191,8 +192,10 @@ bounded by the GC window — see [§8](#8-ledger--kms-signed-checkpoints) for du
 ## 6. Counterfactual engine internals
 
 The originality pivot: rewind a resolved incident, fork alternative remediations, simulate each with a
-**deterministic** model, rank them, compute *decision regret*, and promote the verified best to
-procedural memory. The LLM may *propose* remediations, but it never decides whether one succeeded.
+**deterministic** model, rank them, compute *simulated decision regret*, and promote the best
+simulation-backed remediation to procedural memory as a **candidate** procedure. The LLM may
+*propose* remediations, but it never decides whether one succeeded — and "best" means best *under the
+encoded scenario model*, not proven best in production.
 
 ```mermaid
 flowchart TB
@@ -272,9 +275,12 @@ ledger **root hash**:
 - **Offline** — an HMAC-SHA256 signer for local/dev use.
 
 Signatures land in `ledger_checkpoints (org_id, incident_id, seq_covered, root_hash, signature,
-key_id, algorithm, created_at)`. Optional: export signed packages to **S3 with Object Lock** for WORM
-retention. Because the private key lives in KMS hardware, a checkpoint proves the root hash existed at
-signing time even if the DB is later tampered with.
+key_id, algorithm, created_at)`. Optional (not enabled in the current demo): export signed packages
+to **S3 with Object Lock** for WORM retention. A checkpoint proves the root hash was **authenticated by
+the project's KMS key** and hasn't changed since; the signature itself is not an independent timestamp —
+external timing/persistence comes from the **CloudTrail** signing event and the protected **S3** object.
+KMS is called with `MessageType=RAW` for both sign and verify (KMS hashes the checkpoint bytes; the two
+sides use the same mode, so verification is consistent).
 
 ## 9. Vector recall
 

@@ -4,11 +4,14 @@ Backcast is designed so an *autonomous* agent can be trusted to act. That requir
 happy path — it requires safe defaults, least privilege, and provable behavior when things go wrong.
 
 ## Access control
-- **Multi-tenant isolation.** Every row is scoped by `org_id`, which is also the **prefix column** of
-  each C-SPANN vector index, so similarity search is pre-filtered per tenant.
-- **CockroachDB MCP server: read-only by default.** The agent's exploratory/introspection access goes
-  through the managed MCP endpoint in read-only mode with full audit logging; writes go through the
-  application's typed, parameterized statements — never string-concatenated SQL.
+- **Tenant-scoped data model** (not enforced isolation). Every row is scoped by `org_id`, which is also
+  the **prefix column** of each C-SPANN vector index, so similarity search is pre-filtered per tenant.
+  This is efficient tenant scoping, not a hard isolation guarantee — a missing app filter could still
+  cross tenants. Production would add CockroachDB **row-level security** (`USING` / `WITH CHECK` on
+  `org_id`) and per-service DB roles rather than one shared DSN.
+- **Typed, parameterized SQL** — the application never string-concatenates SQL. The **Managed MCP
+  Server** was used during development for read-only DB inspection; it is **not** on the runtime agent
+  path (a read-only MCP "explain this incident" auditor is on the roadmap).
 - **ccloud service accounts.** Provisioning uses a scoped service account (Cluster Creator/Admin),
   with credentials kept out of the repo (`.gitignore` excludes `service-account*.json`, `cc_*`).
 - **AWS IAM least privilege.** Each Lambda gets only the actions it needs (specific Bedrock model ARNs,
@@ -34,7 +37,10 @@ happy path — it requires safe defaults, least privilege, and provable behavior
   sha256(prev_hash || seq || event_type || payload || actor)`) make the trail **tamper-evident within
   the database** — any edit that doesn't also rewrite every later hash is detectable (`EventLedger.verify()`).
 - **Durable integrity.** For tamper-evidence beyond a database administrator, periodic root-hash
-  checkpoints are signed with **AWS KMS** into **S3 Object Lock** (hardening, in progress).
+  checkpoints are signed with **AWS KMS** (ECDSA P-256) and stored in `ledger_checkpoints`. The
+  signature proves the root hash was authenticated by the KMS key (not an independent timestamp —
+  CloudTrail + the S3 object give timing/persistence). **Optional S3 Object Lock export is not enabled
+  in the current demo.**
 - **Time-travel** answers "what did we know, and when" precisely inside the GC window; the ledger and
   S3 incident packages provide durable provenance beyond it.
 

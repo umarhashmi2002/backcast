@@ -205,8 +205,8 @@ def simulate(payload: dict[str, Any] | None = None) -> dict[str, Any]:
     lesson = None
     if best.branch_id != "actual" and best.outcome.recovered:
         lesson = (
-            f"For '{true_cause}', the verified best remediation is "
-            f"'{' then '.join(best.remediations)}' (score {best.outcome.score})."
+            f"For '{true_cause}', the best simulation-backed remediation is "
+            f"'{' then '.join(best.remediations)}' (simulated score {best.outcome.score})."
         )
     return {
         "scenario": "custom",
