@@ -83,8 +83,8 @@ UI and drive all three headline mechanisms live from your browser:
 | 📥 Ingest (Function URL) | `https://sanik5tdc2qb2uy5hxchobelsa0qagzj.lambda-url.us-east-1.on.aws/` | HMAC |
 
 The ingress is **HMAC-verified** — an unsigned `POST` returns `401` by design. Reproduce the full
-live flow with [`./demo.sh`](./demo.sh) (narrated) or [`./test-endpoints.sh`](./test-endpoints.sh)
-(automated E2E). See [`docs/DEMO.md`](./docs/DEMO.md) for the guided walkthrough.
+live flow with [`./test-endpoints.sh`](./test-endpoints.sh) (automated E2E). See
+[`docs/DEMO.md`](./docs/DEMO.md) for the guided walkthrough.
 
 ## Documentation
 
@@ -96,9 +96,7 @@ live flow with [`./demo.sh`](./demo.sh) (narrated) or [`./test-endpoints.sh`](./
 | [`docs/SECURITY.md`](./docs/SECURITY.md) | Security controls summary (IAM, secrets, HMAC, KMS, fencing) |
 | [`docs/openapi.yaml`](./docs/openapi.yaml) | OpenAPI 3.0 spec for the deployed API (also served at `GET /openapi.yaml`) |
 | [`docs/GLOSSARY.md`](./docs/GLOSSARY.md) | Every project term defined — HLC, MVCC, C-SPANN, fencing token, decision regret, … |
-| [`docs/DEMO.md`](./docs/DEMO.md) | Shot-by-shot demo script (3 acts) against the live UI |
-| [`docs/WEB_UI.md`](./docs/WEB_UI.md) | Wireframe, design tokens, and the UI/UX rationale |
-| [`docs/DEPLOYMENT.md`](./docs/DEPLOYMENT.md) · [`docs/ROADMAP.md`](./docs/ROADMAP.md) · [`docs/SUBMISSION.md`](./docs/SUBMISSION.md) | Deploy runbook · roadmap · hackathon tool/service disclosure |
+| [`docs/DEMO.md`](./docs/DEMO.md) | Shot-by-shot demo recording script against the live UI |
 
 ## The problem
 
@@ -167,8 +165,8 @@ aws secretsmanager put-secret-value --secret-id backcast/database-url \
 ```
 
 One `cdk deploy` provisions 5 Lambdas (ingest / commander / consolidate / webapp), the HMAC-verified
-API Gateway, the KMS signing key, EventBridge schedule, CloudWatch dashboard + alarms, and S3. See
-[`docs/DEPLOYMENT.md`](./docs/DEPLOYMENT.md).
+API Gateway, the KMS signing key, EventBridge schedule, CloudWatch dashboard + alarms, and S3. Then
+set the DSN secret and apply the migrations (see [`docs/ARCHITECTURE.md`](./docs/ARCHITECTURE.md#13-deployment)).
 
 ### Verify it
 
@@ -327,7 +325,10 @@ flowchart TB
 | `POST` | Commander Function URL | open (demo) | Run one agent turn — `{org_id, incident_id, signal}` |
 | `GET`  | `/` (webapp) | open | Interactive React demo UI |
 | `GET`  | `/health` | open | CockroachDB liveness probe |
-| `POST` | `/api/counterfactual` | open | Rewind → fork → compare → learn (returns branches + decision regret) |
+| `GET`  | `/api/scenarios` | open | The built-in incident scenario library (true cause + remediations) |
+| `POST` | `/api/counterfactual` | open | Rewind → fork → compare → learn (pick a scenario + the action taken) |
+| `POST` | `/api/simulate` | open | **Build-your-own** counterfactual — a fully custom incident → live regret |
+| `POST` | `/api/agent` | open | **Live Incident Commander turn** (Amazon Nova Pro tool-use loop) |
 | `POST` | `/api/incident` | open | Belief revision + temporal no-leak reconstruction |
 | `POST` | `/api/race` | open | Concurrency + fencing (N workers, crash & fenced takeover) |
 | `GET`  | `/openapi.yaml` | open | OpenAPI 3.0 spec (Swagger UI at `/docs`) |
@@ -389,7 +390,7 @@ backcast/
 ├── scripts/                 # bootstrap_cockroach.sh, load_seed_data.py, concurrency_demo.py
 ├── tests/                   # unit + property-based (hypothesis) + live-DB integration
 ├── docs/                    # architecture, threat model, memory model, glossary, demo, openapi
-├── demo.sh test-endpoints.sh
+├── test-endpoints.sh
 └── Dockerfile Makefile pyproject.toml
 ```
 
@@ -474,10 +475,8 @@ consolidation, temporal + historical reconstruction, fencing, the **counterfactu
 KMS-signed ledger checkpoints, HMAC-verified API Gateway ingress, and the React web UI. The full
 `BackcastStack` (5 Lambdas incl. the React UI + API Gateway + KMS) is **deployed and smoke-tested
 end-to-end on AWS + CockroachDB Cloud** — signed ingest → agent turn (Amazon Nova Pro) → fenced action
-lease → resolve → KMS-signed checkpoint, all verified live. **Remaining:** the < 3-min demo video. See
-[`docs/ROADMAP.md`](./docs/ROADMAP.md).
+lease → resolve → KMS-signed checkpoint, all verified live. **Remaining:** the < 3-min demo video.
 
 ## License
 
-[Apache License 2.0](./LICENSE) — © 2026 Umar Hashmi. Built during the hackathon submission period;
-see [`docs/SUBMISSION.md`](./docs/SUBMISSION.md) for the full tool/service disclosure.
+[Apache License 2.0](./LICENSE) — © 2026 Umar Hashmi. Built during the hackathon submission period.

@@ -117,7 +117,7 @@ class BackcastStack(Stack):
         ingest_fn = make_fn("IngestFn", "backcast.api.ingest.handler", 512, 30)
         commander_fn = make_fn("CommanderFn", "backcast.api.commander.handler", 1024, 120)
         consolidate_fn = make_fn("ConsolidateFn", "backcast.api.consolidate.handler", 512, 300)
-        webapp_fn = make_fn("WebappFn", "backcast.webapp.app.handler", 1024, 30)
+        webapp_fn = make_fn("WebappFn", "backcast.webapp.app.handler", 1024, 90)
         functions = [ingest_fn, commander_fn, consolidate_fn, webapp_fn]
 
         # --- IAM: least privilege per function -------------------------------
@@ -138,6 +138,7 @@ class BackcastStack(Stack):
         )
         commander_fn.add_to_role_policy(bedrock_invoke)
         consolidate_fn.add_to_role_policy(bedrock_invoke)
+        webapp_fn.add_to_role_policy(bedrock_invoke)  # /api/agent runs a live Nova Pro turn
 
         # --- KMS-signed ledger checkpoints (tamper-evidence beyond the DB) ---
         signing_key = kms.Key(

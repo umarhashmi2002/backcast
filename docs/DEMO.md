@@ -1,68 +1,138 @@
-# Demo guide
+# Demo — shot-by-shot recording script (< 3 min)
 
-A tight, repeatable script for the < 3-minute video and live judging. Everything runs the **real**
-engine against CockroachDB — nothing is faked or pre-recorded.
+A turn-key script for the hackathon video. Total runtime ≈ **2:50**. Every shot lists the
+**timestamp**, what's **on screen** (what to click), the **voiceover** (read it verbatim), and the
+**number to point at** (cursor/zoom). Nothing here is faked — every panel hits the live deployment.
 
-## Setup (pick one)
+- **Live demo URL:** https://2beyv24r657kdthgabtbvg74n40pyolu.lambda-url.us-east-1.on.aws/
+- **Fallback (terminal):** `./test-endpoints.sh` exercises the same live flow end-to-end if you'd rather screen-record a terminal.
 
-- **Live URL** (best for judges): open the deployed `WebappUrl` — the interactive UI.
-- **Local web UI:** `make bootstrap && make db-up && make web` → http://localhost:8000
-- **Terminal:** `make db-up` then the CLI commands below.
+## Prep checklist (before you hit record)
 
-## The 3-act story
+- [ ] Open the live URL in a clean browser window (no extensions bar, 1440×900+, ~125% zoom for legibility).
+- [ ] Warm the Lambdas: click **Run counterfactual** once and **Run Incident Commander** once, then reload (avoids cold-start pauses on camera).
+- [ ] Have a second tab on the GitHub repo and one on `…/docs` (Swagger) for the closing shot.
+- [ ] Mic check; screen recorder at 60fps; cursor highlighting on.
+- [ ] Close Slack/mail; silence notifications.
 
-### Act 1 — Counterfactual replay (the differentiator) · ~70s
+---
 
-> "An on-call engineer restarts a service, the alert clears, incident closed. But *was that the right
-> call?* Backcast rewinds and finds out."
+## Act 1 — The hook (0:00 – 0:22)
 
-- **Web:** click **① Run counterfactual**. **CLI:** `uv run backcast counterfactual`.
-- **Point at:**
-  - the branch **score bars** — `rollback-deploy` (★ BEST, permanent fix) far outranks the actual
-    `restart` (which only *relieves* and recurs);
-  - the big **decision regret = 1.24** — how much better the optimal decision was;
-  - the **lesson promoted to memory** — the agent now *knows* the better remediation, verified by
-    simulation, not guessed;
-  - "**outcomes are computed by a deterministic model — the LLM never decides success.**"
-- **Why it wins:** this is only possible because incidents, branches, outcomes, and the memory they
-  feed live in one transactional store. A vector-store chatbot cannot do this.
+**0:00 · ON SCREEN:** The landing hero ("Rewind an incident. Fork the decision.").
+**VOICEOVER:** "An on-call engineer restarts a service, the alert clears, incident resolved. But *was*
+it? Or did the real bug just go quiet — and it'll page you again at 3 AM?"
+**POINT AT:** the headline, then the tab bar.
 
-### Act 2 — Temporal reconstruction & belief revision · ~60s
+**0:10 · ON SCREEN:** Hover the four tabs — *Counterfactual Lab · Agent Console · Time Travel · Fencing*.
+**VOICEOVER:** "This is Backcast — a temporal decision laboratory for on-call. Agentic memory on
+CockroachDB, serverless on AWS. Everything you're about to see runs live against one database."
 
-> "At 03:14 the agent blamed a traffic surge. At 03:17 a deploy correlation flipped it. Backcast can
-> show *exactly* what it believed at 03:14 — without seeing anything it learned later."
+---
 
-- **Web:** click **② Reconstruct the past**. **CLI:** `uv run backcast demo`.
-- **Point at:**
-  - the two side-by-side panels (03:14 vs. now) and the belief meters (**surge 58% → 8%**,
-    **deploy 11% → 87%**);
-  - **No-leak guarantee = true** — the deploy evidence is *hidden* from the 03:14 view (enforced by
-    CockroachDB MVCC via `AS OF SYSTEM TIME`);
-  - **ledger chain verified** — a tamper-evident audit trail.
+## Act 2 — Counterfactual replay, the originality (0:22 – 1:15)
 
-### Act 3 — Safe autonomy (fencing) · ~40s
+**0:22 · ON SCREEN:** *Counterfactual Lab* tab. Scenario dropdown = `db_pool_exhaustion`;
+"Remediation actually taken" = `restart-service`. Click **Run counterfactual**.
+**VOICEOVER:** "Here's a real incident: a deploy shrank the DB connection pool. Our engineer restarted
+the service. Backcast rewinds to that moment, forks *every* alternative, and scores each on a
+deterministic model — the language model never decides what worked."
+**POINT AT:** the bar chart animating in.
 
-> "When 20 duplicate workers race to run the same rollback, exactly one may act — and a crashed worker
-> can never double-execute."
+**0:38 · ON SCREEN:** The ranked bars; the big **decision regret** number (~1.24).
+**VOICEOVER:** "The restart only *relieved* the symptom — it recurs. A deploy rollback was the
+permanent fix. The gap between them is **decision regret**: one-point-two-four. And the winning
+lesson gets written back into the agent's memory."
+**POINT AT:** the amber ACTUAL bar, the green BEST bar, then the orange regret number, then the
+"Lesson promoted to memory" strip.
 
-- **Web:** click **③ Race 20 workers**. **CLI:** `make race-demo`.
-- **Point at:**
-  - **1** winner out of 20 (transactional `UNIQUE` claim);
-  - the winner **crashes**, a standby **takes over** (generation → 2), and the **revived stale worker is
-    fenced out**;
-  - the external effect executed **exactly once** across the crash + revival (idempotency + fencing).
+**0:58 · ON SCREEN:** Click **+ Build your own**. The custom form appears (pre-filled: "a bad config
+push disabled request caching" with three remediations). Change one number (e.g. bump `add-capacity`
+cost to 3), then click **Run counterfactual**.
+**VOICEOVER:** "And this isn't three canned demos — define *your own* incident. Your true cause, your
+remediations, your risk and cost. It runs the same deterministic engine live."
+**POINT AT:** the true-cause field, a remediation row's checkboxes, then the new regret number.
 
-## Close · ~10s
+---
 
-> "One transactionally-consistent temporal database — CockroachDB — gives the agent memory it can
-> reconstruct, reason over, learn from, and act on safely. Deployed serverless on AWS."
+## Act 3 — The live agent (1:15 – 1:55)
+
+**1:15 · ON SCREEN:** *Agent Console* tab. The alert textarea is pre-filled ("payments-api 5xx… after
+deploy d-8842"). Click **Run Incident Commander**.
+**VOICEOVER:** "Now the agent itself. Type any alert. This is a real Amazon Nova Pro tool-use loop
+against CockroachDB — not a script."
+**POINT AT:** the textarea, then the spinner ("agent running…").
+
+**1:28 · ON SCREEN:** The tool trace fills in (recall → observe → assess → **propose_remediation** →
+resolve); the beliefs meters; the claimed action.
+**VOICEOVER:** "Watch it work: recall similar incidents by vector search, record evidence, revise its
+beliefs, and — critically — claim a **fenced action lease** before it touches anything. Every step is
+written to a hash-chained ledger."
+**POINT AT:** the orange `propose_remediation` step, then the "claimed action" row, then
+"ledger chain — verified ✓".
+
+---
+
+## Act 4 — The technical proofs (1:55 – 2:32)
+
+**1:55 · ON SCREEN:** *Time Travel* tab. Click **Reconstruct 03:14**. Two columns appear.
+**VOICEOVER:** "Two guarantees that need one temporal database. First: what did the agent believe at
+3:14? We reconstruct it with CockroachDB's `AS OF SYSTEM TIME` —"
+**POINT AT:** the left "03:14" column.
+
+**2:08 · ON SCREEN:** The "no-leak" row (green ✓) and the belief flip (11% → 87%).
+**VOICEOVER:** "— and the deploy evidence we learned *later* is invisible in that past view. No
+hindsight leak, enforced by the database, not by our code. The belief flips from eleven to
+eighty-seven percent as evidence arrives."
+**POINT AT:** "deploy evidence hidden ✓", then the "11% → 87%" belief revision.
+
+**2:20 · ON SCREEN:** *Fencing* tab. Slider at 20. Click **Run the race**.
+**VOICEOVER:** "Second: safe autonomy. Twenty workers race for one action lease — exactly one wins.
+The winner crashes, a standby takes over, and the revived worker is fenced out. The external effect
+runs exactly once."
+**POINT AT:** "won the lease: 1", "revived stale worker: fenced out ✓", "executed exactly 1×".
+
+---
+
+## Close (2:32 – 2:50)
+
+**2:32 · ON SCREEN:** Scroll to the hero / or cut to the README architecture diagram.
+**VOICEOVER:** "Counterfactual replay, temporal no-leak recall, fencing-safe actions, a signed audit
+ledger — all in **one** transactional, time-travelling store. That's only possible on CockroachDB,
+and it's deployed on AWS with Bedrock, Lambda, API Gateway, and KMS."
+**POINT AT:** the "one temporal system of record" box in the architecture diagram.
+
+**2:44 · ON SCREEN:** GitHub repo tab (or the `…/docs` Swagger page).
+**VOICEOVER:** "It's open source, deployed, and tested end to end. Backcast — so on-call finally
+learns from the past instead of repeating it."
+**POINT AT:** the repo URL / the live demo URL.
+
+---
+
+## If you narrate live instead of scripting voiceover
+
+Same order, but let the numbers speak: linger ~2 s on the **regret number**, the **fenced-out ✓**, and
+the **no-leak ✓**. Those three moments are the whole pitch.
+
+## Timing budget
+
+| Act | Window | Beat |
+|-----|--------|------|
+| 1 | 0:00–0:22 | Hook + what it is |
+| 2 | 0:22–1:15 | Counterfactual regret + **build your own** |
+| 3 | 1:15–1:55 | Live Nova Pro agent + fenced lease |
+| 4 | 1:55–2:32 | No-leak time travel + fencing race |
+| Close | 2:32–2:50 | One temporal DB thesis + CTA |
+
+Keep it under 3:00. If you run long, trim Act 4's fencing to a 6-second glance — the regret number and
+the live agent are the two moments that win.
 
 ## Map to the judging criteria
 
 | Criterion | Shown in |
 |---|---|
-| Agentic Memory Design | Acts 1–3 (evidence, beliefs, actions, counterfactual branches — all in CockroachDB) |
+| Agentic Memory Design | Acts 2–4 (evidence, beliefs, actions, counterfactual branches — all in CockroachDB) |
 | Technological Implementation | `AS OF SYSTEM TIME`, C-SPANN, fencing, hash chain — used correctly; typed + tested + CI |
-| Real-World Impact | Act 1 (compounding *verified* knowledge on a universal on-call problem) |
-| Product Readiness | Act 3 + fenced/idempotent actions, least-privilege IAM, tamper-evident audit |
-| Creativity & Originality | Act 1 (transactionally-consistent counterfactual replay + decision regret) |
+| Real-World Impact | Act 2 (compounding *verified* knowledge on a universal on-call problem) |
+| Product Readiness | Act 3–4 + fenced/idempotent actions, least-privilege IAM, tamper-evident audit |
+| Creativity & Originality | Act 2 (transactionally-consistent counterfactual replay + decision regret + build-your-own) |

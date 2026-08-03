@@ -82,3 +82,60 @@ button:disabled { opacity: .55; cursor: default; }
 
 footer { color: var(--muted); font-size: 12.5px; margin-top: 34px; text-align: center; }
 code { background: #0c1426; padding: 1px 6px; border-radius: 5px; font-size: 12.5px; }
+
+/* --- tabs ------------------------------------------------------------------ */
+.tabs { display: flex; gap: 6px; flex-wrap: wrap; margin: 8px 0 4px; border-bottom: 1px solid var(--line); }
+.tab { background: transparent; color: var(--muted); border: 0; border-bottom: 2px solid transparent;
+  border-radius: 8px 8px 0 0; padding: 9px 14px; font-weight: 650; font-size: 13.5px; }
+.tab:hover { color: var(--ink); filter: none; }
+.tab.active { color: var(--ink); border-bottom-color: var(--purple); background: rgba(123,92,255,.08); }
+
+/* --- segmented (library / build-your-own) ---------------------------------- */
+.seg { display: inline-flex; gap: 4px; background: #0c1426; border: 1px solid var(--line);
+  border-radius: 10px; padding: 4px; margin: 4px 0 14px; }
+.seg button { background: transparent; color: var(--muted); padding: 6px 13px; font-size: 13px; border-radius: 7px; }
+.seg button:hover { filter: none; color: var(--ink); }
+.seg button.on { background: var(--purple); color: #fff; }
+
+/* --- forms ----------------------------------------------------------------- */
+.form { display: flex; flex-direction: column; gap: 12px; }
+.field { display: flex; flex-direction: column; gap: 5px; font-size: 13px; }
+.field > span { color: var(--muted); }
+.field.inline { flex-direction: row; align-items: center; gap: 9px; }
+input, select, textarea { background: #0c1426; color: var(--ink); border: 1px solid var(--line);
+  border-radius: 9px; padding: 9px 11px; font: inherit; font-size: 14px; }
+input:focus, select:focus, textarea:focus { outline: none; border-color: var(--purple); }
+textarea { resize: vertical; line-height: 1.5; }
+select { cursor: pointer; }
+input[type="range"] { padding: 0; accent-color: var(--purple); flex: 1; max-width: 320px; }
+input[type="checkbox"] { accent-color: var(--purple); width: 17px; height: 17px; }
+
+.chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.chip { font-size: 12px; color: var(--muted); background: #0c1426; border: 1px solid var(--line);
+  border-radius: 999px; padding: 4px 10px; }
+.chip .fx { color: var(--green); font-style: normal; font-weight: 700; }
+.chip .rl { color: var(--amber); font-style: normal; font-weight: 700; }
+
+/* --- build-your-own remediation grid --------------------------------------- */
+.remhead, .remrow { display: grid; grid-template-columns: 1.6fr .6fr .7fr .8fr .8fr .8fr 30px;
+  gap: 8px; align-items: center; }
+.remhead { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; padding: 0 2px; }
+.remhead span { text-align: center; }
+.remhead span:first-child { text-align: left; }
+.remrow input[type="number"], .remrow input:first-child { width: 100%; padding: 7px 8px; }
+.remrow input[type="checkbox"] { justify-self: center; }
+.x { background: transparent; color: var(--muted); border: 1px solid var(--line); border-radius: 8px;
+  padding: 4px; width: 30px; line-height: 1; }
+.x:hover { color: var(--red); border-color: var(--red); filter: none; }
+.form2 { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+.ghost { background: transparent; color: var(--purple); border: 1px dashed var(--line); font-size: 13px; }
+.ghost:hover { border-color: var(--purple); filter: none; }
+
+/* --- agent trace ----------------------------------------------------------- */
+.trace { display: flex; flex-direction: column; gap: 2px; border-left: 2px solid var(--line);
+  padding-left: 14px; margin-left: 4px; }
+.trace .step { position: relative; font-size: 13px; color: var(--muted); padding: 3px 0; font-variant-numeric: tabular-nums; }
+.trace .step .dot { position: absolute; left: -20px; top: 9px; width: 7px; height: 7px; border-radius: 50%;
+  background: #4a5578; }
+.trace .step.act { color: var(--ink); font-weight: 650; }
+.trace .step.act .dot { background: var(--orange); box-shadow: 0 0 0 3px rgba(255,159,67,.16); }

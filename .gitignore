@@ -51,3 +51,10 @@ web/dist/
 
 # Logs
 *.log
+
+# Kept local, excluded from the public repo (per maintainer)
+demo.sh
+docs/DEPLOYMENT.md
+docs/SUBMISSION.md
+docs/WEB_UI.md
+docs/ROADMAP.md

@@ -13,11 +13,15 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from mangum import Mangum
 
+from ..agent import BedrockLLM, IncidentCommander
 from ..api.runtime import get_database_url
 from ..config import Settings
 from ..db.connection import connect
 from ..memory import HashEmbedder, MemoryEngine
 from ..memory.models import Belief, Evidence, EvidenceKind, IncidentStatus
+from ..simulation.comparator import BranchResult, compare
+from ..simulation.model import DeterministicIncidentModel
+from ..simulation.scenarios import SCENARIOS, RemediationEffect, Scenario
 
 _STATIC = Path(__file__).parent / "static"
 _SETTINGS = Settings(embedding_model_id="hash")
@@ -74,50 +78,84 @@ def health() -> dict[str, str]:
         engine.close()
 
 
+def _branch_dict(b: BranchResult, best_id: object) -> dict[str, Any]:
+    return {
+        "label": b.label,
+        "remediations": b.remediations,
+        "score": b.outcome.score,
+        "recovered": b.outcome.recovered,
+        "recurred": b.outcome.recurred,
+        "time_to_recovery_s": b.outcome.time_to_recovery_s,
+        "risk": b.outcome.risk,
+        "cost": b.outcome.cost,
+        "unnecessary_actions": b.outcome.unnecessary_actions,
+        "is_actual": b.is_actual,
+        "is_best": b.branch_id == best_id,
+    }
+
+
+@app.get("/api/scenarios")
+def scenarios() -> dict[str, Any]:
+    """The built-in incident library — each with a hidden true cause + candidate remediations."""
+    return {
+        "scenarios": [
+            {
+                "key": s.key,
+                "true_cause": s.true_cause,
+                "description": s.description,
+                "remediations": {
+                    n: {
+                        "fixes": e.fixes,
+                        "relieves": e.relieves,
+                        "recovery_seconds": e.recovery_seconds,
+                        "risk": e.risk,
+                        "cost": e.cost,
+                    }
+                    for n, e in s.remediations.items()
+                },
+            }
+            for s in SCENARIOS.values()
+        ]
+    }
+
+
 @app.post("/api/counterfactual")
-def counterfactual(org: str = "demo") -> dict[str, Any]:
-    """Rewind → fork → simulate → compare → learn, live."""
+def counterfactual(org: str = "demo", payload: dict[str, Any] | None = None) -> dict[str, Any]:
+    """Rewind → fork → simulate → compare → learn, live. Pick a library scenario + the action taken."""
+    payload = payload or {}
+    scenario_key = str(payload.get("scenario_key") or "db_pool_exhaustion")
+    if scenario_key not in SCENARIOS:
+        raise HTTPException(status_code=400, detail=f"unknown scenario '{scenario_key}'")
+    scenario = SCENARIOS[scenario_key]
+    chosen = payload.get("actual_remediation")
+    default_actual = "restart-service" if "restart-service" in scenario.remediations else next(iter(scenario.remediations))
+    actual = [str(chosen)] if chosen else [default_actual]
+    if actual[0] not in scenario.remediations:
+        raise HTTPException(status_code=400, detail=f"'{actual[0]}' is not a remediation of '{scenario_key}'")
+
     engine = _engine()
     try:
         iid = engine.incidents.create(
-            org, "payments-api 5xx spike", "payments-api",
-            external_id=f"cf-{uuid4().hex[:8]}", scenario="db_pool_exhaustion",
+            org, scenario.description, "payments-api",
+            external_id=f"cf-{uuid4().hex[:8]}", scenario=scenario_key,
         )["id"]
         engine.evidence.record(Evidence(
-            org_id=org, incident_id=iid, kind=EvidenceKind.metric,
-            content="payments-api 5xx rising; DB connection pool at 98% after a deploy",
+            org_id=org, incident_id=iid, kind=EvidenceKind.metric, content=scenario.description,
         ))
-        hypothesis = engine.beliefs.create_hypothesis(org, iid, "a deploy shrank the DB connection pool")
+        hypothesis = engine.beliefs.create_hypothesis(org, iid, scenario.true_cause)
         assert hypothesis.id is not None
-        engine.beliefs.set_belief(org, iid, hypothesis.id, 0.7, rationale="deploy correlated with onset")
+        engine.beliefs.set_belief(org, iid, hypothesis.id, 0.7, rationale="leading hypothesis at onset")
         fork_hlc = engine.temporal.capture_hlc()
-        engine.incidents.set_status(iid, IncidentStatus.resolved, resolution="restarted the service")
+        engine.incidents.set_status(iid, IncidentStatus.resolved, resolution=f"applied {actual[0]}")
 
-        report = engine.counterfactual.run(
-            org, iid, actual_remediations=["restart-service"], forked_at_hlc=fork_hlc
-        )
+        report = engine.counterfactual.run(org, iid, actual_remediations=actual, forked_at_hlc=fork_hlc)
         ordered = sorted(report.branches, key=lambda b: b.outcome.score, reverse=True)
-        branches = [
-            {
-                "label": b.label,
-                "remediations": b.remediations,
-                "score": b.outcome.score,
-                "recovered": b.outcome.recovered,
-                "recurred": b.outcome.recurred,
-                "time_to_recovery_s": b.outcome.time_to_recovery_s,
-                "risk": b.outcome.risk,
-                "cost": b.outcome.cost,
-                "unnecessary_actions": b.outcome.unnecessary_actions,
-                "is_actual": b.is_actual,
-                "is_best": b.branch_id == report.best.branch_id,
-            }
-            for b in ordered
-        ]
         return {
             "incident_id": str(iid),
             "scenario": report.scenario,
+            "actual_remediation": actual[0],
             "forked_at_hlc": report.forked_at_hlc,
-            "branches": branches,
+            "branches": [_branch_dict(b, report.best.branch_id) for b in ordered],
             "best_label": report.best.label,
             "decision_regret": report.decision_regret,
             "lesson": report.lesson,
@@ -125,6 +163,60 @@ def counterfactual(org: str = "demo") -> dict[str, Any]:
         }
     finally:
         engine.close()
+
+
+@app.post("/api/simulate")
+def simulate(payload: dict[str, Any] | None = None) -> dict[str, Any]:
+    """Build-your-own incident: a custom true cause + remediations → live decision regret (no DB)."""
+    payload = payload or {}
+    true_cause = str(payload.get("true_cause") or "").strip()
+    rem_specs = payload.get("remediations")
+    if not true_cause or not isinstance(rem_specs, dict) or not rem_specs:
+        raise HTTPException(status_code=400, detail="true_cause and at least one remediation are required")
+
+    remediations: dict[str, RemediationEffect] = {}
+    for name, spec in rem_specs.items():
+        s = spec if isinstance(spec, dict) else {}
+        remediations[str(name)] = RemediationEffect(
+            fixes=bool(s.get("fixes", False)),
+            relieves=bool(s.get("relieves", False)),
+            recovery_seconds=float(s.get("recovery_seconds", 60.0)),
+            risk=float(s.get("risk", 0.1)),
+            cost=float(s.get("cost", 1.0)),
+        )
+    scenario = Scenario(
+        key="custom", true_cause=true_cause,
+        description=str(payload.get("description") or true_cause), remediations=remediations,
+    )
+    raw_actual = payload.get("actual") or []
+    actual = [str(a) for a in raw_actual] if isinstance(raw_actual, list) else [str(raw_actual)]
+    actual = [a for a in actual if a in remediations] or [next(iter(remediations))]
+
+    model = DeterministicIncidentModel()
+    branches: list[BranchResult] = [
+        BranchResult("actual", "actual", actual, is_actual=True, outcome=model.simulate(scenario, actual))
+    ]
+    for name in remediations:
+        branches.append(
+            BranchResult(name, f"fork:{name}", [name], is_actual=False, outcome=model.simulate(scenario, [name]))
+        )
+    comparison = compare(branches)
+    best = comparison.best
+    lesson = None
+    if best.branch_id != "actual" and best.outcome.recovered:
+        lesson = (
+            f"For '{true_cause}', the verified best remediation is "
+            f"'{' then '.join(best.remediations)}' (score {best.outcome.score})."
+        )
+    return {
+        "scenario": "custom",
+        "true_cause": true_cause,
+        "actual_remediation": " then ".join(actual),
+        "branches": [_branch_dict(b, best.branch_id) for b in comparison.ranked],
+        "best_label": best.label,
+        "decision_regret": comparison.decision_regret,
+        "lesson": lesson,
+    }
 
 
 @app.post("/api/incident")
@@ -256,3 +348,46 @@ def race(org: str = "demo", workers: int = 20) -> dict[str, Any]:
         "revived_stale_worker_accepted": revived_ok,
         "external_effect_executions": executions,
     }
+
+
+@app.post("/api/agent")
+def agent_turn(org: str = "demo", payload: dict[str, Any] | None = None) -> dict[str, Any]:
+    """Live Incident Commander turn (Amazon Nova Pro): type an alert, watch the agent reason + act."""
+    payload = payload or {}
+    signal = str(payload.get("signal") or "").strip()
+    if not signal:
+        raise HTTPException(status_code=400, detail="signal is required")
+    scenario_key = payload.get("scenario_key")
+    if scenario_key and str(scenario_key) not in SCENARIOS:
+        raise HTTPException(status_code=400, detail=f"unknown scenario '{scenario_key}'")
+
+    engine = _engine()
+    try:
+        iid = engine.incidents.create(
+            org, signal[:80], "user-incident",
+            external_id=f"ag-{uuid4().hex[:8]}",
+            scenario=str(scenario_key) if scenario_key else None,
+        )["id"]
+        engine.ledger.append(org, iid, "incident_opened", {"signal": signal[:200]}, actor="webapp")
+
+        commander = IncidentCommander(engine, BedrockLLM())
+        result = commander.handle(org, iid, signal, worker_id="webapp-agent")
+
+        rows = engine.conn.execute(
+            "SELECT h.statement, b.confidence FROM beliefs b JOIN hypotheses h ON h.id = b.hypothesis_id "
+            "WHERE b.incident_id = %s AND b.valid_until IS NULL ORDER BY b.confidence DESC",
+            (iid,),
+        ).fetchall()
+        beliefs = [{"statement": r["statement"], "confidence": float(r["confidence"])} for r in rows]
+
+        return {
+            "incident_id": str(iid),
+            "steps": result.steps,
+            "tool_calls": result.tool_calls,
+            "claimed_action": result.claimed_action,
+            "summary": result.final_text,
+            "beliefs": beliefs,
+            "ledger_verified": engine.ledger.verify(iid),
+        }
+    finally:
+        engine.close()

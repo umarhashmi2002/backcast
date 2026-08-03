@@ -362,8 +362,9 @@ BACKCAST_DATABASE_URL="postgresql://…?sslmode=verify-full&sslrootcert=/path/ro
 ./test-endpoints.sh
 ```
 
-The CDK secret starts as a `{"url":"REPLACE_ME"}` placeholder; step 3 sets the real value. See
-[DEPLOYMENT.md](./DEPLOYMENT.md) for the full runbook and the CockroachDB Cloud CA-cert gotcha.
+The CDK secret starts as a `{"url":"REPLACE_ME"}` placeholder; step 3 sets the real value. The
+CockroachDB Cloud CA is not publicly trusted, so the DSN secret carries the CA cert (`ca_cert`), which
+the Lambda writes to `/tmp` at runtime for `sslmode=verify-full`.
 
 ## 14. Environment variables
 

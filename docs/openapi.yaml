@@ -176,23 +176,106 @@ paths:
         '404':
           description: Spec not bundled in this deployment image
 
+  /api/scenarios:
+    get:
+      tags: [demo]
+      operationId: getScenarios
+      summary: List the built-in incident scenario library
+      description: Each scenario has a hidden true cause and candidate remediations with defined effects.
+      responses:
+        '200':
+          description: Scenario library
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  scenarios:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        key: { type: string }
+                        true_cause: { type: string }
+                        description: { type: string }
+                        remediations:
+                          type: object
+                          additionalProperties:
+                            type: object
+                            properties:
+                              fixes: { type: boolean }
+                              relieves: { type: boolean }
+                              recovery_seconds: { type: number }
+                              risk: { type: number }
+                              cost: { type: number }
+
   /api/counterfactual:
     post:
       tags: [demo]
       operationId: runCounterfactual
       summary: Rewind → fork → simulate → compare → learn
       description: |
-        Seeds a realistic incident, forks the world at a captured HLC, simulates every candidate
-        remediation deterministically, ranks them, and returns the **decision regret** of the
-        action actually taken versus the best branch. Powers the headline demo panel.
+        Forks a chosen library scenario at a captured HLC, simulates every candidate remediation
+        deterministically, ranks them, and returns the **decision regret** of the action actually
+        taken versus the best branch.
       parameters:
         - $ref: '#/components/parameters/Org'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                scenario_key: { type: string, example: db_pool_exhaustion }
+                actual_remediation: { type: string, example: restart-service }
       responses:
         '200':
           description: Counterfactual comparison
           content:
             application/json:
               schema: { $ref: '#/components/schemas/CounterfactualResult' }
+
+  /api/simulate:
+    post:
+      tags: [demo]
+      operationId: runSimulate
+      summary: Build-your-own counterfactual (custom scenario)
+      description: |
+        Define a completely custom incident — a hidden true cause plus remediations with their own
+        effects (fixes/relieves), risk, cost, and recovery time — and get the same live decision-regret
+        ranking. Computed by the deterministic model; no database write.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [true_cause, remediations]
+              properties:
+                true_cause: { type: string, example: a bad config push disabled request caching }
+                description: { type: string }
+                actual:
+                  type: array
+                  items: { type: string }
+                remediations:
+                  type: object
+                  additionalProperties:
+                    type: object
+                    properties:
+                      fixes: { type: boolean }
+                      relieves: { type: boolean }
+                      recovery_seconds: { type: number }
+                      risk: { type: number }
+                      cost: { type: number }
+      responses:
+        '200':
+          description: Custom counterfactual comparison
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CounterfactualResult' }
+        '400':
+          description: true_cause and at least one remediation are required
 
   /api/incident:
     post:
@@ -232,6 +315,51 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/RaceResult' }
+
+  /api/agent:
+    post:
+      tags: [demo]
+      operationId: runAgent
+      summary: Live Incident Commander turn (Amazon Nova Pro)
+      description: |
+        Creates an incident from a free-form alert signal and runs one real agent turn in a Bedrock
+        tool-use loop (recall → observe → assess beliefs → claim a fenced action lease → resolve),
+        returning the tool trace, the claimed action, the beliefs after the turn, and the summary.
+      parameters:
+        - $ref: '#/components/parameters/Org'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [signal]
+              properties:
+                signal: { type: string, example: "payments-api 5xx; DB pool saturated after deploy d-8842" }
+                scenario_key: { type: string, description: optional seed scenario (makes it replay-eligible) }
+      responses:
+        '200':
+          description: Agent turn result
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  incident_id: { type: string }
+                  steps: { type: integer }
+                  tool_calls: { type: array, items: { type: string } }
+                  claimed_action: { type: string, nullable: true }
+                  summary: { type: string }
+                  ledger_verified: { type: boolean }
+                  beliefs:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        statement: { type: string }
+                        confidence: { type: number }
+        '400':
+          description: signal is required
 
 components:
   securitySchemes:
