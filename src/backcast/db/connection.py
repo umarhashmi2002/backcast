@@ -109,6 +109,14 @@ def vector_literal(values: Sequence[float]) -> str:
     return "[" + ",".join(f"{float(x):.7g}" for x in values) + "]"
 
 
+def parse_vector(text: str | None) -> list[float]:
+    """Parse a CockroachDB ``VECTOR`` rendered as text (``[1,2,3]``) back to floats."""
+    if not text:
+        return []
+    inner = text.strip().removeprefix("[").removesuffix("]")
+    return [float(x) for x in inner.split(",") if x.strip()]
+
+
 def admin_dsn(dsn: str, admin_db: str = "defaultdb") -> str:
     """Return ``dsn`` rewritten to connect to a maintenance database."""
     params = conninfo_to_dict(dsn)

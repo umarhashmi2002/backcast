@@ -11,6 +11,7 @@ from .evidence import EvidenceStore
 from .incidents import IncidentStore
 from .leases import ActionLeaseCoordinator
 from .ledger import EventLedger
+from .models import RecalledEvidence
 from .procedural import ProceduralStore
 from .semantic import SemanticStore
 from .temporal import TemporalReconstructor
@@ -53,6 +54,24 @@ class MemoryEngine:
         from ..simulation.branches import CounterfactualService
 
         self.counterfactual = CounterfactualService(self)
+
+    def historical_recall(
+        self,
+        org_id: str,
+        query: str,
+        as_of_hlc: str,
+        *,
+        top_k: int = 8,
+        exclude_incident: object = None,
+    ) -> list[RecalledEvidence]:
+        """Embed ``query`` and recall evidence as it existed at ``as_of_hlc`` (exact, no-leak)."""
+        return self.temporal.historical_recall(
+            org_id,
+            self.embedder.embed_one(query),
+            as_of_hlc,
+            top_k=top_k,
+            exclude_incident=exclude_incident,  # type: ignore[arg-type]
+        )
 
     def close(self) -> None:
         if not self.conn.closed:

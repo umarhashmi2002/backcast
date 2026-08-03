@@ -7,7 +7,21 @@ is preferred over merely *what is nearest*.
 
 from __future__ import annotations
 
+import math
+from collections.abc import Sequence
 from datetime import UTC, datetime
+
+
+def cosine_similarity(a: Sequence[float], b: Sequence[float]) -> float:
+    """Exact cosine similarity between two vectors (0.0 if either is degenerate)."""
+    if not a or not b or len(a) != len(b):
+        return 0.0
+    dot = sum(x * y for x, y in zip(a, b, strict=True))
+    norm_a = math.sqrt(sum(x * x for x in a))
+    norm_b = math.sqrt(sum(x * x for x in b))
+    if norm_a == 0.0 or norm_b == 0.0:
+        return 0.0
+    return dot / (norm_a * norm_b)
 
 
 def cosine_from_l2(distance: float) -> float:

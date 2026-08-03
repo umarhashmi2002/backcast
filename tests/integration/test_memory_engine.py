@@ -116,3 +116,18 @@ def test_evidence_recall_ranks_relevant_first(engine: MemoryEngine, org: str) ->
     results = engine.evidence.recall(org, "database connection pool exhausted", top_k=2)
     assert results
     assert "connection pool" in results[0].content
+
+
+def test_historical_recall_is_exact_and_leak_free(engine: MemoryEngine, org: str) -> None:
+    iid1 = engine.incidents.create(org, "5xx", "payments-api")["id"]
+    _record(engine, org, iid1, EvidenceKind.metric, "database connection pool saturated at limit")
+    hlc = engine.temporal.capture_hlc()
+
+    # Evidence recorded AFTER the captured HLC must not appear in the historical view.
+    iid2 = engine.incidents.create(org, "later outage", "svc")["id"]
+    _record(engine, org, iid2, EvidenceKind.log, "database connection pool saturated again later")
+
+    results = engine.historical_recall(org, "connection pool saturated", hlc, top_k=5)
+    contents = [r.content for r in results]
+    assert any("at limit" in c for c in contents)  # the past evidence is recalled
+    assert all("later" not in c for c in contents)  # the future evidence does not leak
