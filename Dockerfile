@@ -9,5 +9,8 @@ COPY pyproject.toml README.md ./
 COPY src ./src
 RUN pip install --no-cache-dir ".[web]"
 
+# Bundle the OpenAPI spec so the webapp can serve GET /openapi.yaml at runtime.
+COPY docs/openapi.yaml ./docs/openapi.yaml
+
 # Default handler; CDK overrides this per function (ingest / commander / consolidate).
 CMD ["backcast.api.ingest.handler"]

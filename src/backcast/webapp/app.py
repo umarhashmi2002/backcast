@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any
@@ -19,10 +20,17 @@ from ..memory import HashEmbedder, MemoryEngine
 from ..memory.models import Belief, Evidence, EvidenceKind, IncidentStatus
 
 _STATIC = Path(__file__).parent / "static"
-# Repo-root docs/openapi.yaml (present in a source checkout; may be absent in the
-# slim Lambda image, in which case the route 404s — Swagger UI at /docs still works).
-_OPENAPI = Path(__file__).resolve().parents[3] / "docs" / "openapi.yaml"
 _SETTINGS = Settings(embedding_model_id="hash")
+
+
+def _find_openapi() -> Path | None:
+    """Locate docs/openapi.yaml in a source checkout or the Lambda image."""
+    task_root = os.environ.get("LAMBDA_TASK_ROOT")
+    candidates = [
+        Path(__file__).resolve().parents[3] / "docs" / "openapi.yaml",  # source checkout
+        *( [Path(task_root) / "docs" / "openapi.yaml"] if task_root else [] ),  # image bundle
+    ]
+    return next((p for p in candidates if p.is_file()), None)
 
 app = FastAPI(title="Backcast", description="Temporal decision laboratory for on-call.")
 handler = Mangum(app)  # AWS Lambda entry point (API Gateway / Function URL)
@@ -50,9 +58,10 @@ def index() -> FileResponse:
 @app.get("/openapi.yaml", include_in_schema=False)
 def openapi_yaml() -> FileResponse:
     """Serve the hand-authored OpenAPI 3.0 spec (Swagger UI is at /docs)."""
-    if not _OPENAPI.is_file():
+    spec = _find_openapi()
+    if spec is None:
         raise HTTPException(status_code=404, detail="openapi.yaml not bundled in this image")
-    return FileResponse(_OPENAPI, media_type="application/yaml")
+    return FileResponse(spec, media_type="application/yaml")
 
 
 @app.get("/health")
