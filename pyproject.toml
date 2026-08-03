@@ -17,6 +17,13 @@ dependencies = [
     "tenacity>=9.0",
 ]
 
+[project.optional-dependencies]
+web = [
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.32",
+    "mangum>=0.19",
+]
+
 [project.urls]
 Homepage = "https://github.com/umarhashmi2002/backcast"
 Repository = "https://github.com/umarhashmi2002/backcast"
@@ -77,7 +84,7 @@ mypy_path = "src"
 explicit_package_bases = true
 
 [[tool.mypy.overrides]]
-module = ["psycopg.*"]
+module = ["psycopg.*", "mangum.*"]
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]

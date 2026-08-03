@@ -7,8 +7,9 @@ from uuid import uuid4
 
 from ..memory.models import Severity
 from ..telemetry import get_logger
-from .http import json_response, parse_body
-from .runtime import get_engine, put_artifact
+from .http import json_response, parse_body, raw_body
+from .runtime import get_engine, get_webhook_secret, put_artifact
+from .security import SIGNATURE_HEADER, TIMESTAMP_HEADER, verify_webhook
 
 log = get_logger(__name__)
 
@@ -21,6 +22,19 @@ def _severity(value: object) -> Severity:
 
 
 def handler(event: dict[str, Any], context: object = None) -> dict[str, Any]:
+    # If a webhook secret is configured, require a valid HMAC signature (else it's
+    # an open dev endpoint). Alert sources sign "<timestamp>." + body.
+    secret = get_webhook_secret()
+    if secret:
+        headers = {k.lower(): v for k, v in (event.get("headers") or {}).items()}
+        if not verify_webhook(
+            secret=secret,
+            body=raw_body(event),
+            signature=headers.get(SIGNATURE_HEADER),
+            timestamp=headers.get(TIMESTAMP_HEADER),
+        ):
+            return json_response(401, {"error": "invalid or missing webhook signature"})
+
     body = parse_body(event)
     org = str(body.get("org_id", "default"))
     external_id = str(body.get("fingerprint") or body.get("external_id") or uuid4().hex)

@@ -5,6 +5,7 @@ from __future__ import annotations
 from ..config import Settings, get_settings
 from ..db.connection import Connection, shared_connection
 from .beliefs import BeliefStore
+from .checkpoints import LedgerCheckpointer
 from .consolidation import Consolidator, Distiller
 from .embeddings import Embedder, build_embedder
 from .evidence import EvidenceStore
@@ -47,6 +48,7 @@ class MemoryEngine:
         self.semantic = SemanticStore(self.conn, self.embedder, self.settings)
         self.procedural = ProceduralStore(self.conn, self.embedder, self.settings)
         self.consolidator = Consolidator(self, distiller)
+        self.checkpointer = LedgerCheckpointer(self)
 
         # Counterfactual replay (rewind → fork → simulate → compare). Imported here
         # to keep the module-load order memory → simulation (simulation only needs

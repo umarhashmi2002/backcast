@@ -131,3 +131,21 @@ def test_historical_recall_is_exact_and_leak_free(engine: MemoryEngine, org: str
     contents = [r.content for r in results]
     assert any("at limit" in c for c in contents)  # the past evidence is recalled
     assert all("later" not in c for c in contents)  # the future evidence does not leak
+
+
+def test_ledger_checkpoint_signs_and_detects_tampering(engine: MemoryEngine, org: str) -> None:
+    iid = engine.incidents.create(org, "outage", "svc")["id"]
+    engine.ledger.append(org, iid, "incident_opened", {"service": "svc"})
+    engine.ledger.append(org, iid, "belief_updated", {"confidence": 0.9})
+
+    checkpoint = engine.checkpointer.checkpoint(org, iid)
+    assert checkpoint.seq_covered == 2
+    assert engine.checkpointer.verify_latest(iid) is True
+
+    # Tampering with an earlier ledger payload breaks chain verification.
+    engine.conn.execute(
+        "UPDATE event_ledger SET payload = '{\"service\":\"hacked\"}'::JSONB "
+        "WHERE incident_id = %s AND seq = 1",
+        (iid,),
+    )
+    assert engine.checkpointer.verify_latest(iid) is False

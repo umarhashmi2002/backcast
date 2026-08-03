@@ -22,6 +22,20 @@ def parse_body(event: dict[str, Any]) -> dict[str, Any]:
     return parsed if isinstance(parsed, dict) else {}
 
 
+def raw_body(event: dict[str, Any]) -> bytes:
+    """Return the request body as raw bytes (for HMAC signature verification)."""
+    body = event.get("body")
+    if body is None:
+        return b""
+    if isinstance(body, bytes | bytearray):
+        return bytes(body)
+    if isinstance(body, dict):
+        return json.dumps(body).encode("utf-8")
+    if event.get("isBase64Encoded"):
+        return base64.b64decode(body)
+    return str(body).encode("utf-8")
+
+
 def json_response(status: int, data: dict[str, Any]) -> dict[str, Any]:
     return {
         "statusCode": status,

@@ -6,6 +6,7 @@ Triggered by EventBridge. Idempotent: each incident is consolidated at most once
 
 from __future__ import annotations
 
+import contextlib
 from typing import Any
 
 from ..telemetry import get_logger
@@ -29,6 +30,8 @@ def handler(event: dict[str, Any], context: object = None) -> dict[str, Any]:
         org = str(incident["org_id"])
         report = engine.consolidator.consolidate_incident(org, incident["id"])
         engine.incidents.mark_consolidated(incident["id"])
+        with contextlib.suppress(ValueError):  # no ledger entries yet → skip
+            engine.checkpointer.checkpoint(org, incident["id"])  # KMS-signed in the cloud
         if org not in decayed_orgs:
             engine.consolidator.decay(org)
             decayed_orgs.add(org)

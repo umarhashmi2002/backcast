@@ -7,7 +7,7 @@ WORKDIR ${LAMBDA_TASK_ROOT}
 # Install the backcast package and its runtime dependencies into the image.
 COPY pyproject.toml README.md ./
 COPY src ./src
-RUN pip install --no-cache-dir .
+RUN pip install --no-cache-dir ".[web]"
 
 # Default handler; CDK overrides this per function (ingest / commander / consolidate).
 CMD ["backcast.api.ingest.handler"]

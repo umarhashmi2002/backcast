@@ -44,5 +44,10 @@ cockroach-data/
 .DS_Store
 *.swp
 
+# Node / web build
+web/node_modules/
+web/.vite/
+web/dist/
+
 # Logs
 *.log

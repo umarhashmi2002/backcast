@@ -17,19 +17,24 @@ happy path — it requires safe defaults, least privilege, and provable behavior
   env files, or logs.
 
 ## Safe autonomous action
-- **Single-owner action leases.** `UNIQUE(org_id, action_key)` guarantees exactly one worker may
-  execute a given action, even under a thundering herd of duplicate alerts.
-- **Idempotency.** A `UNIQUE(idempotency_key)` and transactional completion mean a retried or resumed
-  worker never double-executes.
-- **Crash recovery.** `lease_expires_at` + `take_over_if_expired` let a healthy worker resume a dead
-  holder's action safely — and only after expiry, never while the holder is alive.
+- **Single-owner claim.** `UNIQUE(org_id, action_key)` guarantees exactly one *current logical owner*
+  of an action, even under a thundering herd of duplicate alerts.
+- **Fencing tokens.** Every takeover bumps `lease_generation`; writes/completions are gated on
+  `holder = me AND lease_generation = mine AND not expired`. An expired lease proves the holder failed
+  to renew — *not* that it is dead — so a revived stale worker is **fenced out** and cannot finalize.
+- **Idempotency + state verification.** `UNIQUE(idempotency_key)` plus checking external state before
+  acting make the effect *safely repeatable*. Because a DB transaction cannot atomically commit with an
+  external AWS side effect, Backcast does **not** claim "exactly-once execution" — it guarantees one
+  canonical action intent with safe repetition.
 - **SQL-safe reconstruction.** `AS OF SYSTEM TIME` requires a constant; the HLC is validated against a
-  strict decimal regex and the incident id is validated as a UUID before inlining.
+  strict decimal regex and ids are validated before inlining.
 
 ## Auditability
-- **Immutable evidence** and an **append-only, hash-chained `event_ledger`** (`entry_hash =
-  sha256(prev_hash || seq || event_type || payload || actor)`) make the decision trail tamper-evident;
-  `EventLedger.verify()` recomputes the chain.
+- **Immutable evidence** and an append-only, **hash-chained** `event_ledger` (`entry_hash =
+  sha256(prev_hash || seq || event_type || payload || actor)`) make the trail **tamper-evident within
+  the database** — any edit that doesn't also rewrite every later hash is detectable (`EventLedger.verify()`).
+- **Durable integrity.** For tamper-evidence beyond a database administrator, periodic root-hash
+  checkpoints are signed with **AWS KMS** into **S3 Object Lock** (hardening, in progress).
 - **Time-travel** answers "what did we know, and when" precisely inside the GC window; the ledger and
   S3 incident packages provide durable provenance beyond it.
 

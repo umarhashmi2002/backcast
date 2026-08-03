@@ -19,14 +19,16 @@ beliefs, and decisions never leave one transactional, temporal system of record.
 
 A conventional stack splits an operational DB from a vector store. To answer *"what did the agent
 believe at 03:14?"* that stack must event-source its operational data **and** version its vectors
-**and** keep the two synchronized. Backcast gets a transactionally-consistent point-in-time view for
-free from CockroachDB:
+**and** keep the two synchronized. Backcast gets a transactionally-consistent point-in-time view
+**without operating two separate, synchronized stores** — though this trades design and storage cost,
+not literally "for free":
 
 - **System-time travel** — `AS OF SYSTEM TIME <hlc>` reconstructs the exact committed state. Evidence
   written later is invisible because of MVCC. We capture `cluster_logical_timestamp()` (`db_ts`) at
-  each write so reconstruction is precise.
-- **Application-time versioning** — `beliefs.valid_from/valid_until` form an append-only ledger of the
-  agent's belief history, independent of the GC window.
+  each write so reconstruction is precise. Historical *recall* uses exact distance over a bounded set
+  (ANN acceleration is not assumed inside a historical read).
+- **Application-time versioning** — `beliefs.valid_from/valid_until` form a versioned history of the
+  agent's beliefs (immutable content, explicit supersession), independent of the GC window.
 - **Vectors next to the truth** — C-SPANN indexes live in the same tables as the operational rows, so
   recall is always consistent with state; no ETL, no drift.
 

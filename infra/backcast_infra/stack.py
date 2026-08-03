@@ -33,6 +33,15 @@ from aws_cdk import (
     aws_iam as iam,
 )
 from aws_cdk import (
+    aws_kms as kms,
+)
+from aws_cdk import (
+    aws_apigatewayv2 as apigw,
+)
+from aws_cdk import (
+    aws_apigatewayv2_integrations as apigw_integrations,
+)
+from aws_cdk import (
     aws_lambda as lambda_,
 )
 from aws_cdk import (
@@ -44,10 +53,10 @@ from aws_cdk import (
 from constructs import Construct
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
-# Intended reasoning model. Override at deploy time with
-#   cdk deploy -c bedrock_model_id=<id>
-# e.g. us.amazon.nova-pro-v1:0 until Anthropic use-case access is enabled.
-_BEDROCK_MODEL_ID = "us.anthropic.claude-sonnet-5"
+# Reasoning model (Amazon Nova Pro — enabled on this account). Override at deploy
+# time once Anthropic access is enabled, e.g.
+#   cdk deploy -c bedrock_model_id=us.anthropic.claude-sonnet-5
+_BEDROCK_MODEL_ID = "us.amazon.nova-pro-v1:0"
 _EMBEDDING_MODEL_ID = "amazon.titan-embed-text-v2:0"
 
 
@@ -108,7 +117,8 @@ class BackcastStack(Stack):
         ingest_fn = make_fn("IngestFn", "backcast.api.ingest.handler", 512, 30)
         commander_fn = make_fn("CommanderFn", "backcast.api.commander.handler", 1024, 120)
         consolidate_fn = make_fn("ConsolidateFn", "backcast.api.consolidate.handler", 512, 300)
-        functions = [ingest_fn, commander_fn, consolidate_fn]
+        webapp_fn = make_fn("WebappFn", "backcast.webapp.app.handler", 1024, 30)
+        functions = [ingest_fn, commander_fn, consolidate_fn, webapp_fn]
 
         # --- IAM: least privilege per function -------------------------------
         for fn in functions:
@@ -129,6 +139,31 @@ class BackcastStack(Stack):
         commander_fn.add_to_role_policy(bedrock_invoke)
         consolidate_fn.add_to_role_policy(bedrock_invoke)
 
+        # --- KMS-signed ledger checkpoints (tamper-evidence beyond the DB) ---
+        signing_key = kms.Key(
+            self,
+            "CheckpointKey",
+            description="Backcast ledger checkpoint signing key (ECDSA P-256)",
+            key_spec=kms.KeySpec.ECC_NIST_P256,
+            key_usage=kms.KeyUsage.SIGN_VERIFY,
+            removal_policy=RemovalPolicy.DESTROY,
+        )
+        consolidate_fn.add_environment("BACKCAST_CHECKPOINT_KEY_ID", signing_key.key_id)
+        signing_key.grant(consolidate_fn, "kms:Sign", "kms:Verify", "kms:GetPublicKey")
+
+        # --- Signed webhook ingress (HMAC) ----------------------------------
+        webhook_secret = sm.Secret(
+            self,
+            "WebhookSecret",
+            secret_name="backcast/webhook-secret",
+            description="HMAC secret for signing alert webhooks to /incidents",
+            generate_secret_string=sm.SecretStringGenerator(
+                password_length=40, exclude_punctuation=True
+            ),
+        )
+        webhook_secret.grant_read(ingest_fn)
+        ingest_fn.add_environment("BACKCAST_WEBHOOK_SECRET_ID", webhook_secret.secret_name)
+
         # --- HTTPS entry points (Lambda Function URLs) -----------------------
         cors = lambda_.FunctionUrlCorsOptions(
             allowed_origins=["*"], allowed_methods=[lambda_.HttpMethod.ALL]
@@ -138,6 +173,28 @@ class BackcastStack(Stack):
         )
         commander_url = commander_fn.add_function_url(
             auth_type=lambda_.FunctionUrlAuthType.NONE, cors=cors
+        )
+        webapp_url = webapp_fn.add_function_url(auth_type=lambda_.FunctionUrlAuthType.NONE, cors=cors)
+
+        # --- API Gateway HTTP API: HMAC-verified, throttled webhook ingress --
+        ingress_api = apigw.HttpApi(
+            self,
+            "IngressApi",
+            create_default_stage=False,
+            description="Backcast webhook ingress (HMAC-verified)",
+        )
+        ingress_api.add_routes(
+            path="/incidents",
+            methods=[apigw.HttpMethod.POST],
+            integration=apigw_integrations.HttpLambdaIntegration("IngestIntegration", ingest_fn),
+        )
+        apigw.HttpStage(
+            self,
+            "IngressStage",
+            http_api=ingress_api,
+            stage_name="prod",
+            auto_deploy=True,
+            throttle=apigw.ThrottleSettings(rate_limit=20, burst_limit=10),
         )
 
         # --- EventBridge: scheduled consolidation ----------------------------
@@ -171,6 +228,13 @@ class BackcastStack(Stack):
         )
 
         # --- Outputs ---------------------------------------------------------
+        CfnOutput(self, "WebappUrl", value=webapp_url.url, description="Interactive demo UI")
+        CfnOutput(
+            self,
+            "IngressApiUrl",
+            value=f"{ingress_api.api_endpoint}/prod/incidents",
+            description="POST HMAC-signed alerts here (API Gateway, throttled)",
+        )
         CfnOutput(self, "IngestUrl", value=ingest_url.url, description="POST alerts here")
         CfnOutput(self, "CommanderUrl", value=commander_url.url, description="POST agent turns here")
         CfnOutput(self, "ArtifactBucket", value=artifacts.bucket_name)

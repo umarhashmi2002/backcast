@@ -52,6 +52,18 @@ def get_database_url() -> str:
     return url
 
 
+@lru_cache(maxsize=1)
+def get_webhook_secret() -> str | None:
+    """Webhook HMAC secret from Secrets Manager (id) or env; None disables verification."""
+    secret_id = os.environ.get("BACKCAST_WEBHOOK_SECRET_ID")
+    if secret_id:
+        import boto3
+
+        client = boto3.client("secretsmanager", region_name=get_settings().aws_region)
+        return client.get_secret_value(SecretId=secret_id).get("SecretString")
+    return os.environ.get("BACKCAST_WEBHOOK_SECRET") or None
+
+
 def get_engine() -> MemoryEngine:
     """Return a warm-reused MemoryEngine, reconnecting if the connection died."""
     global _engine
