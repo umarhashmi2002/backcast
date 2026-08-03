@@ -1,0 +1,414 @@
+openapi: 3.0.3
+info:
+  title: Backcast API
+  version: "1.0.0"
+  description: |
+    **Backcast** — an AI SRE Incident Commander with agentic memory on CockroachDB + AWS.
+
+    The deployed surface spans three Lambdas, each on its own host:
+
+    | Component  | Host (server)                                   | Purpose                                            |
+    |------------|-------------------------------------------------|----------------------------------------------------|
+    | Ingest     | API Gateway `…/prod` **or** the ingest Fn URL   | Turn an alert webhook into an incident (HMAC-auth) |
+    | Commander  | Commander Function URL                          | Run one Incident Commander agent turn (Nova Pro)   |
+    | Web / API  | Webapp Function URL                             | Interactive demo UI + the live memory panels       |
+
+    ### Authentication
+    The **ingest** endpoint is protected by an **HMAC-SHA256 webhook signature** (see the
+    `webhookHmac` security scheme). The commander and webapp panels are open in the demo
+    deployment (guard them the same way for production).
+
+    HMAC scheme: sign the bytes `"<x-backcast-timestamp>." + <raw body>` with the shared
+    secret (Secrets Manager id `backcast/webhook-secret`); send
+    `x-backcast-signature: sha256=<hexdigest>` and `x-backcast-timestamp: <unix seconds>`.
+    Requests older than 300s are rejected (replay protection).
+  license:
+    name: Apache-2.0
+
+servers:
+  - url: https://2beyv24r657kdthgabtbvg74n40pyolu.lambda-url.us-east-1.on.aws
+    description: Web UI + demo API (webapp Lambda)
+  - url: https://1a1x8v25m9.execute-api.us-east-1.amazonaws.com/prod
+    description: Ingress API (API Gateway, HMAC-verified, throttled 20 rps / burst 10)
+  - url: https://sanik5tdc2qb2uy5hxchobelsa0qagzj.lambda-url.us-east-1.on.aws
+    description: Ingest Function URL (alternate ingress; same HMAC contract)
+  - url: https://u754vo546smuamntvsvicdngfe0otxdc.lambda-url.us-east-1.on.aws
+    description: Commander Function URL (agent turns)
+
+tags:
+  - name: ingress
+    description: Alert intake → incident (HMAC-verified)
+  - name: agent
+    description: The Incident Commander agent loop
+  - name: demo
+    description: Live memory panels backing the web UI
+  - name: meta
+    description: Health and machine-readable docs
+
+paths:
+  /incidents:
+    post:
+      tags: [ingress]
+      operationId: ingestAlert
+      summary: Ingest an alert webhook → incident (idempotent, HMAC-verified)
+      description: |
+        Creates (or returns) an incident keyed by `fingerprint` (idempotent). When a webhook
+        secret is configured, a valid `webhookHmac` signature is **required** — unsigned or stale
+        requests get `401`. Served by API Gateway at `/prod/incidents`; the ingest Function URL
+        accepts the same body at its root (`POST /`).
+      servers:
+        - url: https://1a1x8v25m9.execute-api.us-east-1.amazonaws.com/prod
+          description: API Gateway ingress
+      security:
+        - webhookHmac: []
+      parameters:
+        - $ref: '#/components/parameters/SignatureHeader'
+        - $ref: '#/components/parameters/TimestampHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AlertWebhook'
+            examples:
+              checkout5xx:
+                summary: Checkout 5xx spike after a deploy
+                value:
+                  org_id: demo
+                  fingerprint: am-checkout-5xx-2026-08-03
+                  title: Checkout 5xx spike
+                  service: checkout
+                  severity: sev1
+                  summary: Error rate 12% after deploy d-8842
+                  labels: { deploy: d-8842, region: us-east-1 }
+      responses:
+        '201':
+          description: Incident created
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/IngestResult' }
+        '200':
+          description: Incident already existed (idempotent replay)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/IngestResult' }
+        '401':
+          description: Missing or invalid webhook signature
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+              example: { error: "invalid or missing webhook signature" }
+
+  /:
+    get:
+      tags: [meta]
+      operationId: webUi
+      summary: The interactive Backcast demo UI (React single-page app)
+      description: Served by the webapp Lambda. Returns the built React `index.html`.
+      responses:
+        '200':
+          description: HTML document
+          content:
+            text/html:
+              schema: { type: string }
+    post:
+      tags: [agent]
+      operationId: commanderTurn
+      summary: Run one Incident Commander agent turn
+      description: |
+        Runs the agent loop (Amazon **Nova Pro** via Bedrock Converse) over the memory tools:
+        recall similar incidents → record observations → assess hypotheses (revise beliefs) →
+        claim a **fenced action lease** → resolve. Typically ~20s. **Served by the Commander
+        Function URL** (this operation's `servers` override), not the webapp host.
+      servers:
+        - url: https://u754vo546smuamntvsvicdngfe0otxdc.lambda-url.us-east-1.on.aws
+          description: Commander Function URL
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CommanderRequest' }
+            examples:
+              checkout:
+                value:
+                  org_id: demo
+                  incident_id: 72eba2d2-ef07-490a-b727-806702d022b7
+                  signal: "Checkout error rate 12% right after deploy d-8842; latency up. What do we do?"
+      responses:
+        '200':
+          description: Agent turn completed
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CommanderResult' }
+        '400':
+          description: Missing one of org_id / incident_id / signal
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+
+  /health:
+    get:
+      tags: [meta]
+      operationId: health
+      summary: Liveness + DB connectivity check
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: string, example: ok }
+
+  /openapi.yaml:
+    get:
+      tags: [meta]
+      operationId: openapiSpec
+      summary: This OpenAPI document (machine-readable)
+      description: Interactive Swagger UI for the webapp routes is also served at `GET /docs`.
+      responses:
+        '200':
+          description: OpenAPI 3.0 YAML
+          content:
+            application/yaml:
+              schema: { type: string }
+        '404':
+          description: Spec not bundled in this deployment image
+
+  /api/counterfactual:
+    post:
+      tags: [demo]
+      operationId: runCounterfactual
+      summary: Rewind → fork → simulate → compare → learn
+      description: |
+        Seeds a realistic incident, forks the world at a captured HLC, simulates every candidate
+        remediation deterministically, ranks them, and returns the **decision regret** of the
+        action actually taken versus the best branch. Powers the headline demo panel.
+      parameters:
+        - $ref: '#/components/parameters/Org'
+      responses:
+        '200':
+          description: Counterfactual comparison
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CounterfactualResult' }
+
+  /api/incident:
+    post:
+      tags: [demo]
+      operationId: runIncident
+      summary: Belief revision + temporal no-leak reconstruction
+      description: |
+        Records early evidence, sets initial beliefs, captures an HLC, then adds *later* deploy
+        evidence and revises beliefs. Reconstructs the incident **as of** the earlier HLC to prove
+        the future evidence does not leak backwards (`no_leak: true`), and returns the belief flip.
+      parameters:
+        - $ref: '#/components/parameters/Org'
+      responses:
+        '200':
+          description: Temporal reconstruction + belief history
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/IncidentResult' }
+
+  /api/race:
+    post:
+      tags: [demo]
+      operationId: runRace
+      summary: Action-lease concurrency + fencing + crash-safety
+      description: |
+        N workers race to claim one action lease (exactly one wins). Then a holder "crashes",
+        a second worker takes over with a bumped fencing generation, and the revived stale worker
+        is **fenced out** — the external effect executes exactly once.
+      parameters:
+        - $ref: '#/components/parameters/Org'
+        - name: workers
+          in: query
+          schema: { type: integer, default: 20, minimum: 2, maximum: 50 }
+      responses:
+        '200':
+          description: Race + fencing outcome
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/RaceResult' }
+
+components:
+  securitySchemes:
+    webhookHmac:
+      type: apiKey
+      in: header
+      name: x-backcast-signature
+      description: |
+        HMAC-SHA256 over `"<x-backcast-timestamp>." + <raw body>`, hex-encoded and prefixed
+        `sha256=`. Requires the companion `x-backcast-timestamp` header (unix seconds, ≤300s old).
+
+  parameters:
+    Org:
+      name: org
+      in: query
+      description: Tenant / organization id.
+      schema: { type: string, default: demo }
+    SignatureHeader:
+      name: x-backcast-signature
+      in: header
+      required: true
+      description: '`sha256=<hexdigest>` — HMAC-SHA256 of `"<timestamp>." + body`.'
+      schema: { type: string, example: "sha256=9f2c…" }
+    TimestampHeader:
+      name: x-backcast-timestamp
+      in: header
+      required: true
+      description: Unix seconds when the request was signed (replay window 300s).
+      schema: { type: string, example: "1785657600" }
+
+  schemas:
+    AlertWebhook:
+      type: object
+      required: [org_id, fingerprint]
+      properties:
+        org_id: { type: string, example: demo }
+        fingerprint:
+          type: string
+          description: Stable alert key; ingest is idempotent on it (aliased `external_id`).
+          example: am-checkout-5xx
+        title: { type: string, example: Checkout 5xx spike }
+        service: { type: string, example: checkout }
+        severity:
+          type: string
+          enum: [sev1, sev2, sev3, sev4]
+          default: sev3
+        summary: { type: string, nullable: true }
+        labels:
+          type: object
+          additionalProperties: { type: string }
+          nullable: true
+
+    IngestResult:
+      type: object
+      properties:
+        incident_id: { type: string, format: uuid }
+        created: { type: boolean }
+        status: { type: string, example: triggered }
+        artifact:
+          type: string
+          nullable: true
+          description: S3 URI of the raw alert payload, if an artifact bucket is configured.
+          example: s3://backcaststack-artifacts…/incidents/demo/…/alert-….json
+
+    CommanderRequest:
+      type: object
+      required: [org_id, incident_id, signal]
+      properties:
+        org_id: { type: string, example: demo }
+        incident_id: { type: string, format: uuid }
+        signal:
+          type: string
+          description: The operator's free-text prompt / latest signal for this turn.
+        worker_id: { type: string, default: lambda-agent }
+
+    CommanderResult:
+      type: object
+      properties:
+        incident_id: { type: string, format: uuid }
+        summary: { type: string, description: The agent's final narration. }
+        steps: { type: integer, description: Number of reasoning steps taken. }
+        tool_calls:
+          type: array
+          items: { type: string }
+          example: [recall_similar_incidents, record_observation, assess_hypothesis, propose_remediation, resolve_incident]
+        claimed_action:
+          type: string
+          nullable: true
+          description: The fenced action lease key claimed, if any.
+          example: "rollback-d-8842:72eba2d2-…"
+
+    CounterfactualResult:
+      type: object
+      properties:
+        incident_id: { type: string, format: uuid }
+        scenario: { type: string, example: db_pool_exhaustion }
+        forked_at_hlc: { type: string, description: HLC the branches were forked from. }
+        best_label: { type: string, example: "fork:rollback-deploy" }
+        decision_regret:
+          type: number
+          format: float
+          description: best.score − actual.score (0 means the action taken was optimal).
+          example: 1.24
+        lesson: { type: string, description: Verified best remediation, promoted to procedural memory. }
+        ledger_verified: { type: boolean }
+        branches:
+          type: array
+          items: { $ref: '#/components/schemas/Branch' }
+
+    Branch:
+      type: object
+      properties:
+        label: { type: string, example: "fork:rollback-deploy" }
+        remediations:
+          type: array
+          items: { type: string }
+        score: { type: number, format: float }
+        recovered: { type: boolean }
+        recurred: { type: boolean }
+        time_to_recovery_s: { type: number, nullable: true }
+        risk: { type: number }
+        cost: { type: number }
+        unnecessary_actions: { type: integer }
+        is_actual: { type: boolean }
+        is_best: { type: boolean }
+
+    IncidentResult:
+      type: object
+      properties:
+        incident_id: { type: string, format: uuid }
+        t1_hlc: { type: string }
+        surge_hypothesis: { type: string }
+        deploy_hypothesis: { type: string }
+        no_leak:
+          type: boolean
+          description: True iff the deploy evidence added after t1 is invisible in the t1 reconstruction.
+        at_t1: { $ref: '#/components/schemas/Snapshot' }
+        now: { $ref: '#/components/schemas/Snapshot' }
+        deploy_belief_history:
+          type: array
+          items:
+            type: object
+            properties:
+              confidence: { type: number, format: float }
+              current: { type: boolean }
+        ledger_verified: { type: boolean }
+
+    Snapshot:
+      type: object
+      properties:
+        evidence:
+          type: array
+          items:
+            type: object
+            properties:
+              kind: { type: string }
+              content: { type: string }
+        surge: { type: number, format: float, description: Confidence in the traffic-surge hypothesis. }
+        deploy: { type: number, format: float, description: Confidence in the bad-deploy hypothesis. }
+
+    RaceResult:
+      type: object
+      properties:
+        workers: { type: integer, example: 20 }
+        winners: { type: integer, description: Always 1 — exactly one worker wins the lease., example: 1 }
+        crash_takeover_generation: { type: integer, description: Fencing generation after takeover., example: 2 }
+        taker_completed: { type: boolean }
+        revived_stale_worker_accepted:
+          type: boolean
+          description: False — the revived crashed worker is fenced out.
+          example: false
+        external_effect_executions:
+          type: integer
+          description: Always 1 — the external side effect ran exactly once (idempotency).
+          example: 1
+
+    Error:
+      type: object
+      properties:
+        error: { type: string }

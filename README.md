@@ -10,9 +10,13 @@
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](./LICENSE)
 [![Python 3.13](https://img.shields.io/badge/python-3.13-blue.svg)](https://www.python.org)
 [![CockroachDB](https://img.shields.io/badge/CockroachDB-v26.2-6933FF.svg)](https://www.cockroachlabs.com)
-[![AWS](https://img.shields.io/badge/AWS-Bedrock%20%7C%20Lambda%20%7C%20S3-FF9900.svg)](https://aws.amazon.com)
+[![AWS](https://img.shields.io/badge/AWS-Bedrock%20%7C%20Lambda%20%7C%20KMS-FF9900.svg)](https://aws.amazon.com)
 
 *Built for the [CockroachDB × AWS "Agentic Memory" Hackathon](https://cockroachdb-ai.devpost.com/).*
+
+**▶ [Live demo](https://2beyv24r657kdthgabtbvg74n40pyolu.lambda-url.us-east-1.on.aws/)** ·
+[Docs](#documentation) · [How it works](#how-it-works--step-by-step) · [Architecture](#architecture) ·
+[API](#api-endpoints)
 
 </div>
 
@@ -41,15 +45,68 @@ REWIND → FORK → COMPARE   (outcomes computed deterministically, not by an LL
 
 That loop — *reconstruct the past, fork it, simulate alternatives, and learn which decision was
 best* — is only tractable because operational state, evidence, beliefs, actions, and vectors live in
-**one transactionally-consistent, time-travelling database**. `uv run backcast counterfactual` runs it
-live; the outcome is computed by [`simulation/model.py`](./src/backcast/simulation/model.py) — the LLM
-may *propose* alternatives but never decides whether one succeeded.
+**one transactionally-consistent, time-travelling database**. The outcome is computed by
+[`simulation/model.py`](./src/backcast/simulation/model.py) — the LLM may *propose* alternatives but
+never decides whether one succeeded.
 
-## Why one temporal database
+## In one picture
+
+```mermaid
+graph LR
+    Alert[Alert fires] -->|HMAC webhook| GW[API Gateway]
+    GW --> Ing[Ingest Lambda]
+    Ing --> DB[(CockroachDB<br/>one temporal store)]
+    Cmd[Commander Lambda<br/>Bedrock Nova Pro] -->|recall · believe · act| DB
+    Cmd -->|fenced action lease| Act[Remediation]
+    DB -->|AS OF SYSTEM TIME| CF[Counterfactual replay]
+    CF -->|decision regret| Learn[Promote verified lesson]
+    Learn --> DB
+    Con[Consolidate Lambda] -->|KMS-signed checkpoint| DB
+```
+
+An alert becomes an incident; the **Commander** agent recalls similar past incidents (vector search),
+records evidence, revises time-versioned beliefs, and claims a **fenced action lease** before it acts.
+After resolution, Backcast **rewinds** to the decision point, **forks** alternative remediations,
+scores each with a deterministic model, and **promotes the verified best** back into memory. Every
+step is written to a hash-chained ledger with periodic **KMS-signed checkpoints**.
+
+## Live on AWS
+
+Backcast is **deployed and running** on AWS + CockroachDB Cloud — not a slideware demo. Click the web
+UI and drive all three headline mechanisms live from your browser:
+
+| What | URL | Auth |
+|------|-----|------|
+| 🖥️ **Interactive demo (React UI)** | **https://2beyv24r657kdthgabtbvg74n40pyolu.lambda-url.us-east-1.on.aws/** | open |
+| 🔒 Signed webhook ingress (API Gateway, throttled) | `https://1a1x8v25m9.execute-api.us-east-1.amazonaws.com/prod/incidents` | HMAC |
+| 🤖 Commander (one agent turn, Amazon Nova Pro) | `https://u754vo546smuamntvsvicdngfe0otxdc.lambda-url.us-east-1.on.aws/` | open (demo) |
+| 📥 Ingest (Function URL) | `https://sanik5tdc2qb2uy5hxchobelsa0qagzj.lambda-url.us-east-1.on.aws/` | HMAC |
+
+The ingress is **HMAC-verified** — an unsigned `POST` returns `401` by design. Reproduce the full
+live flow with [`./demo.sh`](./demo.sh) (narrated) or [`./test-endpoints.sh`](./test-endpoints.sh)
+(automated E2E). See [`docs/DEMO.md`](./docs/DEMO.md) for the guided walkthrough.
+
+## Documentation
+
+| Document | What's inside |
+|----------|---------------|
+| [`docs/ARCHITECTURE.md`](./docs/ARCHITECTURE.md) | Full architecture deep-dive — data flows, temporal & counterfactual internals, deployment, cost |
+| [`docs/MEMORY_MODEL.md`](./docs/MEMORY_MODEL.md) | The six memory tiers, their tables, and the CockroachDB feature each relies on |
+| [`docs/THREAT_MODEL.md`](./docs/THREAT_MODEL.md) | Trust boundaries, threats (key leak, ledger tampering, split-brain actions, replay, temporal leak, prompt injection) → mitigations |
+| [`docs/SECURITY.md`](./docs/SECURITY.md) | Security controls summary (IAM, secrets, HMAC, KMS, fencing) |
+| [`docs/openapi.yaml`](./docs/openapi.yaml) | OpenAPI 3.0 spec for the deployed API (also served at `GET /openapi.yaml`) |
+| [`docs/GLOSSARY.md`](./docs/GLOSSARY.md) | Every project term defined — HLC, MVCC, C-SPANN, fencing token, decision regret, … |
+| [`docs/DEMO.md`](./docs/DEMO.md) | Shot-by-shot demo script (3 acts) against the live UI |
+| [`docs/WEB_UI.md`](./docs/WEB_UI.md) | Wireframe, design tokens, and the UI/UX rationale |
+| [`docs/DEPLOYMENT.md`](./docs/DEPLOYMENT.md) · [`docs/ROADMAP.md`](./docs/ROADMAP.md) · [`docs/SUBMISSION.md`](./docs/SUBMISSION.md) | Deploy runbook · roadmap · hackathon tool/service disclosure |
+
+## The problem
 
 On-call fights the same fires repeatedly, and post-incident reviews ask two brutal questions: *"what
 did we know, and when?"* and *"was that the right call?"* A stateless copilot answers neither, and a
-bolt-on vector store has no notion of time, consistency, or *counterfactuals*.
+bolt-on vector store has no notion of time, transactional consistency, or *counterfactuals* — so it
+cannot reconstruct a past belief state without leaking hindsight, cannot prove a decision was best,
+and cannot coordinate an autonomous action safely across crashing workers.
 
 Backcast keeps everything in CockroachDB, which makes five things possible **without operating a
 separate event-sourced database and a synchronized vector store**:
@@ -85,7 +142,9 @@ The reviewer was right to demand precision, so:
   CockroachDB **v26.2**; historical (`AS OF SYSTEM TIME`) recall uses **exact** distance over a
   bounded set rather than assuming ANN acceleration.
 
-## See it in 60 seconds
+## Quick start
+
+### Run it locally (offline, no AWS)
 
 ```bash
 make bootstrap          # uv-managed venv + dev deps
@@ -93,10 +152,31 @@ make db-up              # local CockroachDB (docker) + schema migration
 uv run backcast counterfactual   # ⭐ rewind → fork → compare → learn
 uv run backcast demo             # the five memory mechanisms, narrated
 make race-demo                   # 25-worker lease race + crash + fencing
+make web                         # interactive UI at http://localhost:8000
 ```
 
-Everything runs offline (deterministic hash embeddings); add `--bedrock` for Amazon Titan. The same
-behaviour is asserted in `tests/` (`make test` for unit, `make test-integration` for live-DB).
+Everything runs offline with deterministic hash embeddings; add `--bedrock` for Amazon Titan.
+
+### Deploy your own to AWS
+
+```bash
+cd infra && uv run cdk deploy --require-approval never
+# then put your CockroachDB DSN (+ CA cert) into the created secret:
+aws secretsmanager put-secret-value --secret-id backcast/database-url \
+  --secret-string '{"url":"postgresql://…:26257/backcast?sslmode=verify-full","ca_cert":"-----BEGIN…"}'
+```
+
+One `cdk deploy` provisions 5 Lambdas (ingest / commander / consolidate / webapp), the HMAC-verified
+API Gateway, the KMS signing key, EventBridge schedule, CloudWatch dashboard + alarms, and S3. See
+[`docs/DEPLOYMENT.md`](./docs/DEPLOYMENT.md).
+
+### Verify it
+
+```bash
+make test               # unit + property-based tests (hypothesis) — no DB/AWS needed
+make test-integration   # live-DB integration tests (against local CockroachDB)
+./test-endpoints.sh     # automated E2E checks against the deployed API
+```
 
 ## How it works — step by step
 
@@ -210,6 +290,7 @@ flowchart TB
         L1["Lambda: ingest"]
         L2["Lambda: commander<br/>(Bedrock Nova + tools)"]
         L3["Lambda: consolidate<br/>(EventBridge cron)"]
+        L4["Lambda: webapp<br/>(FastAPI + React)"]
         BR["Bedrock<br/>Nova Pro + Titan"]
         S3["S3<br/>artifacts + signed<br/>ledger checkpoints"]
         KMS["KMS<br/>sign checkpoints"]
@@ -232,11 +313,101 @@ flowchart TB
     L2 -. "AS OF SYSTEM TIME" .-> BEL
     L2 --> SIM --> LTM
     L3 --> LOG --> KMS --> S3
+    L4 -.reads.-> CRDB
     L1 --> S3
     L2 & L1 & L3 --> SM & CW
 ```
 
-## Tools & services
+## API endpoints
+
+| Method | Path / entry point | Auth | Description |
+|--------|--------------------|------|-------------|
+| `POST` | `/prod/incidents` (API Gateway) | **HMAC** | Signed alert webhook → incident (idempotent on fingerprint) |
+| `POST` | Ingest Function URL | **HMAC** | Same, direct Function URL (unsigned ⇒ `401`) |
+| `POST` | Commander Function URL | open (demo) | Run one agent turn — `{org_id, incident_id, signal}` |
+| `GET`  | `/` (webapp) | open | Interactive React demo UI |
+| `GET`  | `/health` | open | CockroachDB liveness probe |
+| `POST` | `/api/counterfactual` | open | Rewind → fork → compare → learn (returns branches + decision regret) |
+| `POST` | `/api/incident` | open | Belief revision + temporal no-leak reconstruction |
+| `POST` | `/api/race` | open | Concurrency + fencing (N workers, crash & fenced takeover) |
+| `GET`  | `/openapi.yaml` | open | OpenAPI 3.0 spec (Swagger UI at `/docs`) |
+
+Full request/response schemas: [`docs/openapi.yaml`](./docs/openapi.yaml). HMAC signing scheme:
+sign `"<unix_ts>." + body` with the shared secret (HMAC-SHA256); send `x-backcast-timestamp` and
+`x-backcast-signature: sha256=<hex>` (max age 300 s).
+
+## Design decisions
+
+| Decision | Rationale |
+|----------|-----------|
+| **One CockroachDB** for state + beliefs + vectors + ledger | No synchronized event-store + vector-store to keep consistent; `AS OF SYSTEM TIME` works across *all* of it |
+| `AS OF SYSTEM TIME` for temporal recall | MVCC enforces the no-future-leak guarantee at the database, not by fragile app-side filtering |
+| **L2** vector index (not a cosine op class) | v26.2 C-SPANN ships the L2 op class; Titan v2 vectors are normalized, so L2 ranking ≡ cosine ranking |
+| **Fencing generation** on action leases | A revived stale worker after takeover is rejected — no split-brain external effects |
+| **Deterministic** incident model for counterfactuals | Outcomes must be reproducible and trustworthy; the LLM *proposes* remediations but never scores success |
+| Hash-chain **+ KMS-signed** checkpoints | Tamper-evidence inside the DB, plus integrity beyond a DBA via KMS ECDSA P-256 signatures |
+| **HMAC + API Gateway throttling** for ingress | A public webhook must authenticate callers and resist floods (rate 20 / burst 10) |
+| **Amazon Nova Pro** (not Claude) | Works out-of-the-box on the account; Claude-ready via `cdk deploy -c bedrock_model_id=…` |
+| **Container-image** Lambdas, one shared image | `psycopg` needs native libs; one build serves all handlers via different `cmd` |
+| **uv + ruff + mypy `--strict` + pytest** | Reproducible env, typed, lint- and type-clean, CI-gated |
+
+## Project structure
+
+```
+backcast/
+├── src/backcast/
+│   ├── api/                 # Lambda handlers
+│   │   ├── ingest.py        #   alert webhook → incident (HMAC-verified)
+│   │   ├── commander.py     #   one agent turn (Bedrock)
+│   │   ├── consolidate.py   #   scheduled consolidation + KMS checkpoint
+│   │   ├── security.py      #   HMAC signing / verification
+│   │   ├── http.py          #   request/response helpers
+│   │   └── runtime.py       #   warm engine, Secrets Manager, S3
+│   ├── agent/               # the SRE Incident Commander
+│   │   ├── commander.py     #   tool-use reasoning loop
+│   │   ├── llm.py           #   Bedrock Converse + offline scripted LLM
+│   │   ├── tools.py         #   recall / observe / assess / remediate / resolve
+│   │   └── prompts.py
+│   ├── memory/              # the memory engine (one facade over CockroachDB)
+│   │   ├── engine.py        #   wires every store together
+│   │   ├── evidence.py beliefs.py incidents.py leases.py ledger.py
+│   │   ├── temporal.py      #   AS OF SYSTEM TIME reconstruction + historical recall
+│   │   ├── checkpoints.py   #   KMS / HMAC-signed ledger checkpoints
+│   │   ├── semantic.py procedural.py consolidation.py
+│   │   ├── embeddings.py scoring.py models.py
+│   ├── simulation/          # the counterfactual core
+│   │   ├── scenarios.py     #   hidden true cause + remediation effects
+│   │   ├── model.py         #   deterministic outcome + scoring
+│   │   ├── comparator.py    #   rank branches → decision regret
+│   │   └── branches.py      #   orchestrate fork → simulate → compare → promote
+│   ├── webapp/              # FastAPI + Mangum; serves the built React UI
+│   ├── db/                  # connection + idempotent migration runner
+│   ├── cli.py config.py telemetry.py
+├── db/migrations/           # 0001_init … 0005_ledger_checkpoints (fully commented)
+├── infra/backcast_infra/    # AWS CDK stack (BackcastStack)
+├── web/                     # React + Vite + TypeScript source (builds into webapp/static)
+├── scripts/                 # bootstrap_cockroach.sh, load_seed_data.py, concurrency_demo.py
+├── tests/                   # unit + property-based (hypothesis) + live-DB integration
+├── docs/                    # architecture, threat model, memory model, glossary, demo, openapi
+├── demo.sh test-endpoints.sh
+└── Dockerfile Makefile pyproject.toml
+```
+
+## Tech stack
+
+| Layer | Technology |
+|-------|-----------|
+| Language | Python 3.13 (`__future__` annotations, typed `--strict`) |
+| Database | **CockroachDB v26.2** — `AS OF SYSTEM TIME`, C-SPANN vector index, Row-Level TTL, HLC |
+| Reasoning | Amazon **Bedrock** — Nova Pro (Converse + tool use) + Titan v2 embeddings |
+| Compute | AWS **Lambda** (ARM64 container images), **API Gateway** HTTP API |
+| Security | **KMS** (ECDSA P-256), **Secrets Manager**, HMAC webhooks, least-privilege IAM |
+| Ops | **EventBridge** (cron), **CloudWatch** (dashboard + alarms), **S3** |
+| IaC | AWS **CDK** (Python) — one `cdk deploy` |
+| Web UI | **React** + Vite + TypeScript · FastAPI + Mangum |
+| Tooling | **uv**, **ruff**, **mypy --strict**, **pytest** + **hypothesis**, GitHub Actions CI |
+
+## Tools & services (hackathon requirements)
 
 **CockroachDB tools** (requires ≥ 2 — Backcast uses all four): **Distributed Vector Indexing
 (C-SPANN)** for evidence/semantic/procedural recall; **Managed MCP Server** (read-only, audited) for
@@ -254,17 +425,54 @@ signing) · **API Gateway** (HMAC-verified, throttled ingress) — all via the *
 | Criterion | How Backcast delivers |
 |-----------|----------------------|
 | **Agentic Memory Design** | Six memory tiers in one system: immutable evidence, versioned beliefs + provenance, transactional fenced actions, decayed long-term memory, and counterfactual branches — no ETL, no cross-store drift. |
-| **Technological Implementation** | Correct, precise use of `AS OF SYSTEM TIME`, C-SPANN vectors, fencing tokens, Row-Level TTL, hash chains. Typed (`mypy --strict`), tested (unit + live-DB integration), CI-gated. |
+| **Technological Implementation** | Correct, precise use of `AS OF SYSTEM TIME`, C-SPANN vectors, fencing tokens, Row-Level TTL, hash chains. Typed (`mypy --strict`), tested (unit + property-based + live-DB integration), CI-gated. |
 | **Real-World Impact** | On-call is universal and expensive. Backcast compounds institutional knowledge *and* proves which decisions are actually best — then remembers them. |
 | **Product Readiness** | Least-privilege IAM, Secrets Manager, fenced + idempotent actions, tamper-evident ledger (KMS-signed checkpoints), HMAC-verified throttled ingress, structured logs, alarms. See [`docs/SECURITY.md`](./docs/SECURITY.md). |
 | **Creativity & Originality** | Transactionally-consistent counterfactual replay of agent decisions, with decision regret and verified-lesson promotion — not generic incident recall. |
 
+## Real-world impact
+
+- **On-call is universal and expensive.** Every SaaS team runs incidents; the knowledge earned at
+  03:00 usually evaporates by the next rotation. Backcast makes it *compound* — recall, belief
+  history, and verified lessons persist across incidents and people.
+- **Post-incident reviews get an honest referee.** *Decision regret* turns "we think the rollback was
+  better" into a reproducible number, computed by a deterministic model rather than argued in a
+  retro.
+- **A reusable reference architecture.** Temporal no-leak recall, fencing-safe autonomous actions,
+  and hash-chain + KMS tamper-evidence are patterns any agentic system that *takes actions* needs —
+  not just SRE.
+- **Safe autonomy.** The fencing + idempotency + state-verification pattern lets an agent act on the
+  world without split-brain double-execution when workers crash or pause.
+
+## Roadmap
+
+```mermaid
+timeline
+    title Backcast — Roadmap
+    section Phase 1 — Hackathon MVP (Done · live on AWS)
+        Memory engine : 6 tiers on CockroachDB — evidence, beliefs, provenance, semantic, procedural, working
+        SRE Commander : Bedrock Nova Pro tool-use loop (recall → believe → fenced action → resolve)
+        Counterfactual replay : rewind → fork → compare → decision regret → promote lesson
+        Integrity : hash-chained ledger + KMS-signed checkpoints
+        Secure ingress : HMAC + API Gateway throttling
+        Web UI : interactive React demo, deployed
+    section Phase 2 — Post-Hackathon
+        Belief calibration : were high-confidence beliefs correct?
+        MCP explain tool : read-only "explain this incident" over the ledger
+        Multi-tenant : isolated orgs, usage metering
+        S3 Object Lock : WORM export of signed checkpoints
+    section Phase 3 — Scale
+        Real integrations : PagerDuty / Alertmanager / Slack action approvals
+        Live remediation : real cloud actions behind the fenced-lease + policy gate
+        Calibrated autonomy : promote agent from proposer to actor as regret shrinks
+```
+
 ## Status
 
-🚀 Deployed & live (deadline **Aug 18, 2026**). **Done & tested (51 tests):** memory engine, the SRE
-agent loop, consolidation, temporal + historical reconstruction, fencing, the **counterfactual replay
-core**, KMS-signed ledger checkpoints, HMAC-verified API Gateway ingress, and the React web UI. The
-full `BackcastStack` (5 Lambdas incl. the React UI + API Gateway + KMS) is **deployed and smoke-tested
+🚀 Deployed & live (deadline **Aug 18, 2026**). **Done & tested:** memory engine, the SRE agent loop,
+consolidation, temporal + historical reconstruction, fencing, the **counterfactual replay core**,
+KMS-signed ledger checkpoints, HMAC-verified API Gateway ingress, and the React web UI. The full
+`BackcastStack` (5 Lambdas incl. the React UI + API Gateway + KMS) is **deployed and smoke-tested
 end-to-end on AWS + CockroachDB Cloud** — signed ingest → agent turn (Amazon Nova Pro) → fenced action
 lease → resolve → KMS-signed checkpoint, all verified live. **Remaining:** the < 3-min demo video. See
 [`docs/ROADMAP.md`](./docs/ROADMAP.md).

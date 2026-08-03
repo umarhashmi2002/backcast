@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from mangum import Mangum
@@ -19,6 +19,9 @@ from ..memory import HashEmbedder, MemoryEngine
 from ..memory.models import Belief, Evidence, EvidenceKind, IncidentStatus
 
 _STATIC = Path(__file__).parent / "static"
+# Repo-root docs/openapi.yaml (present in a source checkout; may be absent in the
+# slim Lambda image, in which case the route 404s — Swagger UI at /docs still works).
+_OPENAPI = Path(__file__).resolve().parents[3] / "docs" / "openapi.yaml"
 _SETTINGS = Settings(embedding_model_id="hash")
 
 app = FastAPI(title="Backcast", description="Temporal decision laboratory for on-call.")
@@ -42,6 +45,14 @@ def _engine() -> MemoryEngine:
 @app.get("/")
 def index() -> FileResponse:
     return FileResponse(_STATIC / "index.html")
+
+
+@app.get("/openapi.yaml", include_in_schema=False)
+def openapi_yaml() -> FileResponse:
+    """Serve the hand-authored OpenAPI 3.0 spec (Swagger UI is at /docs)."""
+    if not _OPENAPI.is_file():
+        raise HTTPException(status_code=404, detail="openapi.yaml not bundled in this image")
+    return FileResponse(_OPENAPI, media_type="application/yaml")
 
 
 @app.get("/health")
