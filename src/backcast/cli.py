@@ -9,10 +9,12 @@ from __future__ import annotations
 
 import argparse
 import textwrap
+from concurrent.futures import ThreadPoolExecutor
 from uuid import UUID, uuid4
 
 from .config import Settings, get_settings
 from .db import migrate as migrate_module
+from .db.connection import connect
 from .memory import MemoryEngine
 from .memory.models import Evidence, EvidenceKind, IncidentStatus, NodeType, Relation
 
@@ -157,24 +159,36 @@ def _run_demo(engine: MemoryEngine, org: str, embed_mode: str) -> None:
     _rule("MECHANISM 3 · Transactional action lease (safe autonomy)")
     action_key = f"rollback:payments-api:v2.4.1:{iid}"
     print("  25 duplicate workers receive the same alert and propose the same rollback...")
-    winner = None
-    for worker in range(25):
-        claim = engine.leases.claim(
-            org, iid, action_key, holder=f"worker-{worker}", payload={"action": "rollback"}
-        )
-        if claim.won:
-            winner = claim
-    assert winner is not None
+
+    # Genuinely concurrent: a sequential loop would "win once" simply because it
+    # ran second, proving nothing about contention. Each worker needs its own
+    # session, since a single psycopg connection cannot be shared across threads.
+    def attempt(worker: int) -> tuple[str, bool]:
+        worker_engine = MemoryEngine(conn=connect(), embedder=engine.embedder)
+        try:
+            claim = worker_engine.leases.claim(
+                org, iid, action_key, holder=f"worker-{worker}", payload={"action": "rollback"}
+            )
+            return f"worker-{worker}", claim.won
+        finally:
+            worker_engine.close()
+
+    with ThreadPoolExecutor(max_workers=25) as pool:
+        outcomes = list(pool.map(attempt, range(25)))
+
+    winners = [holder for holder, won in outcomes if won]
+    assert len(winners) == 1, f"action lease admitted {len(winners)} winners, expected exactly 1"
     lease = engine.leases.get(org, action_key)
     assert lease is not None
-    _kv("workers that attempted", "25")
-    _kv("workers that won the claim", f"1  ({winner.holder})")
+    winning_holder = winners[0]
+    _kv("workers that attempted", "25 (concurrent)")
+    _kv("workers that won the claim", f"{len(winners)}  ({winning_holder})")
     engine.ledger.append(
         org,
         iid,
         "action_claimed",
-        {"action_key": action_key, "holder": winner.holder},
-        actor=winner.holder,
+        {"action_key": action_key, "holder": winning_holder},
+        actor=winning_holder,
     )
 
     # crash-safe: another worker takes over only if the lease has expired

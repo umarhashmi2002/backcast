@@ -77,7 +77,7 @@ graph LR
     GW --> Ing[Ingest Lambda]
     Ing --> DB[(CockroachDB<br/>one temporal store)]
     Cmd[Commander Lambda<br/>Bedrock Nova Pro] -->|recall · believe · act| DB
-    Cmd -->|fenced action lease| Act[Remediation]
+    Cmd -->|fenced action lease| Act[Remediation intent<br/>execution out of scope]
     DB -->|AS OF SYSTEM TIME| CF[Counterfactual replay]
     CF -->|simulated regret| Learn[Promote best lesson<br/>simulation-verified]
     Learn --> DB
@@ -85,7 +85,8 @@ graph LR
 ```
 
 An alert becomes an incident; the **Commander** agent recalls similar past incidents (vector search),
-records evidence, revises time-versioned beliefs, and claims a **fenced action lease** before it acts.
+records evidence, revises time-versioned beliefs, and claims a **fenced action lease** for the
+remediation it selects (executing it is out of scope — see [`THREAT_MODEL.md`](./docs/THREAT_MODEL.md) §6).
 After resolution, Backcast **rewinds** to the decision point, **forks** alternative remediations,
 scores each with a deterministic model, and **promotes the best simulation-backed remediation** back into memory. Every
 step is written to a hash-chained ledger with periodic **KMS-signed checkpoints**.
@@ -134,7 +135,7 @@ separate event-sourced database and a synchronized vector store**:
 | 1 | **Counterfactual replay** — fork a resolved incident, simulate alternative remediations, rank them, compute *decision regret*, promote the winner to memory | one transactional store for branches, outcomes, and the memory they feed |
 | 2 | **Temporal reconstruction** — *"what did the agent believe at 03:14?"* with **no future-evidence leak** | `AS OF SYSTEM TIME` at a captured HLC; MVCC enforces no-leak, not app filtering |
 | 3 | **Versioned belief history + provenance** — which evidence changed the agent's mind, and when | bitemporal `beliefs` (`valid_from/until`, `superseded_by`) + a typed provenance graph |
-| 4 | **Fencing-safe autonomy** — one of N workers acts; a crashed/paused worker can't finalize after takeover | `UNIQUE(org_id, action_key)` claim + **fencing generation** + idempotency + state verification |
+| 4 | **Fencing-safe autonomy** — one of N workers acts; a crashed/paused worker can't finalize after takeover | `UNIQUE(org_id, action_key)` claim + **fencing generation** + a recorded idempotency key |
 | 5 | **Evidence-preserving memory** — learn without corrupting the record; durable audit | immutable evidence; retrieval-decayed semantic/procedural; hash-chained ledger + signed checkpoints |
 
 ## A note on precise claims
@@ -143,9 +144,11 @@ The reviewer was right to demand precision, so:
 
 - **Not "exactly-once" external effects.** A database transaction cannot atomically commit with an
   external AWS side effect. Backcast guarantees **exactly one current logical owner and one canonical
-  action intent**, and makes execution *safely repeatable* via a fencing token (`lease_generation`,
-  bumped on takeover), an idempotency key, and pre-execution state verification. A stale worker that
-  "revives" after takeover is **fenced out** (see `make race-demo`).
+  action intent**, carried by a fencing token (`lease_generation`, bumped on takeover) plus a
+  recorded idempotency key that would make an executor safely repeatable. A stale worker that
+  "revives" after takeover is **fenced out** (see `make race-demo`). **Executing the remediation is
+  out of scope in this build** — the agent claims the lease and stops; no external system is
+  mutated, and there is no state-verification step because there is nothing to verify against.
 - **Not "append-only" beliefs.** It's a **versioned belief history**: belief *content* is immutable
   and superseded explicitly (`valid_until`, `superseded_by`); the supersession itself is recorded in
   the ledger.
@@ -184,7 +187,7 @@ aws secretsmanager put-secret-value --secret-id backcast/database-url \
   --secret-string '{"url":"postgresql://…:26257/backcast?sslmode=verify-full","ca_cert":"-----BEGIN…"}'
 ```
 
-One `cdk deploy` provisions 5 Lambdas (ingest / commander / consolidate / webapp), the HMAC-verified
+One `cdk deploy` provisions 4 Lambdas (ingest / commander / consolidate / webapp), the HMAC-verified
 API Gateway, the KMS signing key, EventBridge schedule, CloudWatch dashboard + alarms, and S3. Then
 set the DSN secret and apply the migrations (see [`docs/ARCHITECTURE.md`](./docs/ARCHITECTURE.md#13-deployment)).
 
@@ -223,7 +226,7 @@ flowchart LR
 4. **Recall** — C-SPANN vector search finds semantically similar past evidence.
 5. **Evidence + beliefs** — each observation is immutable; each hypothesis gets a calibrated,
    *time-versioned* confidence.
-6. **Action lease** — the agent claims an exclusive, fenced lease before it acts (see below).
+6. **Action lease** — the agent claims an exclusive, fenced lease for the action it selects (see below). Execution is out of scope in this build.
 7. **Resolve** — the incident's state machine advances; `state_version` bumps.
 8. **Consolidate** (scheduled) — distills the closed incident into semantic/procedural memory.
 9. **Counterfactual replay** — forks the incident and simulates alternatives.
@@ -429,7 +432,7 @@ backcast/
 | Layer | Technology |
 |-------|-----------|
 | Language | Python 3.13 (`__future__` annotations, typed `--strict`) |
-| Database | **CockroachDB v26.2** — `AS OF SYSTEM TIME`, C-SPANN vector index, Row-Level TTL, HLC |
+| Database | **CockroachDB** — `AS OF SYSTEM TIME`, C-SPANN vector index, Row-Level TTL, HLC. Deployed against Cloud **v26.2**; CI runs **v25.2**, the minimum for C-SPANN vector indexing |
 | Reasoning | Amazon **Bedrock** — Nova Pro (Converse + tool use) + Titan v2 embeddings |
 | Compute | AWS **Lambda** (ARM64 container images), **API Gateway** HTTP API |
 | Security | **KMS** (ECDSA P-256), **Secrets Manager**, HMAC webhooks, least-privilege IAM |
@@ -472,7 +475,7 @@ signing) · **API Gateway** (HMAC-verified, throttled ingress) — all via the *
 - **A reusable reference architecture.** Temporal no-leak recall, fencing-safe autonomous actions,
   and hash-chain + KMS tamper-evidence are patterns any agentic system that *takes actions* needs —
   not just SRE.
-- **Safe autonomy.** The fencing + idempotency + state-verification pattern lets an agent act on the
+- **Safe autonomy.** The fencing + idempotency pattern lets an agent act on the
   world without split-brain double-execution when workers crash or pause.
 
 ## Roadmap
@@ -503,7 +506,7 @@ timeline
 🚀 Deployed & live (deadline **Aug 18, 2026**). **Done & tested:** memory engine, the SRE agent loop,
 consolidation, temporal + historical reconstruction, fencing, the **counterfactual replay core**,
 KMS-signed ledger checkpoints, HMAC-verified API Gateway ingress, and the React web UI. The full
-`BackcastStack` (5 Lambdas incl. the React UI + API Gateway + KMS) is **deployed and smoke-tested
+`BackcastStack` (4 Lambdas incl. the React UI + API Gateway + KMS) is **deployed and smoke-tested
 end-to-end on AWS + CockroachDB Cloud** — signed ingest → agent turn (Amazon Nova Pro) → fenced action
 lease → resolve → KMS-signed checkpoint, all verified live. **Remaining:** the < 3-min demo video.
 

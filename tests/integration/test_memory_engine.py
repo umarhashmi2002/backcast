@@ -149,3 +149,35 @@ def test_ledger_checkpoint_signs_and_detects_tampering(engine: MemoryEngine, org
         (iid,),
     )
     assert engine.checkpointer.verify_latest(iid) is False
+
+
+def test_working_memory_is_ttl_governed_and_records_turns(engine: MemoryEngine, org: str) -> None:
+    """The sixth tier is real: turns are persisted and the cluster owns their lifetime."""
+    iid = engine.incidents.create(org, "scratchpad", "payments-api")["id"]
+    session_id = engine.working.open_session(org, iid, worker_id="worker-a")
+
+    written = engine.working.record_turns(
+        org,
+        session_id,
+        [("user", "pool at 94%"), ("assistant", "checking recent deploys")],
+        incident_id=iid,
+    )
+    assert written == 2
+
+    turns = engine.working.turns(session_id)
+    assert [t["role"] for t in turns] == ["user", "assistant"]
+    assert turns[0]["content"] == "pool at 94%"
+    assert turns[0]["token_estimate"] > 0
+
+    # Row-Level TTL is enforced by CockroachDB, not by application cleanup. Assert
+    # against the live schema rather than trusting the migration text.
+    assert engine.working.ttl_expire_after() == "24:00:00"
+
+    engine.working.close_session(session_id, summary="done")
+    row = engine.conn.execute(
+        "SELECT summary FROM agent_sessions WHERE id = %s", (session_id,)
+    ).fetchone()
+    assert row is not None
+    assert row["summary"] == "done"
+
+    assert engine.working.record_turns(org, session_id, []) == 0

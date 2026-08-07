@@ -82,7 +82,7 @@ flowchart TB
 | Layer | Piece | Responsibility |
 |-------|-------|----------------|
 | Ingress | API Gateway + `ingest` Lambda | HMAC-verify the webhook, turn an alert into an incident (idempotent on the source fingerprint), archive the raw payload to S3. |
-| Reasoning | `commander` Lambda + Bedrock | Recall similar evidence, form/revise hypotheses & beliefs, claim a fenced lease, decide on and execute remediation. |
+| Reasoning | `commander` Lambda + Bedrock | Recall similar evidence, form/revise hypotheses & beliefs, decide on a remediation, and claim a fenced lease for it. Executing the action is out of scope — see [`THREAT_MODEL.md`](./THREAT_MODEL.md) §6. |
 | Reflection | `consolidate` Lambda (EventBridge) | Distill closed incidents into semantic/procedural memory; decay retrieval scores; write a signed ledger checkpoint. |
 | Presentation | `webapp` Lambda (FastAPI + React) | Serve the interactive demo UI and the counterfactual / temporal / fencing panels. |
 | Memory | CockroachDB | Evidence, beliefs, provenance, leases, ledger, checkpoints, counterfactual branches, long-term memory. |
@@ -152,7 +152,7 @@ sequenceDiagram
     end
     Cmd->>DB: claim action lease (UNIQUE, fenced)
     alt claim won
-        Cmd->>Cmd: execute remediation (idempotent)
+        Cmd->>Cmd: hold lease (execution out of scope)
         Cmd->>DB: complete lease + ledger
     else claim lost / fenced
         Cmd->>Cmd: stand down
@@ -318,10 +318,10 @@ single `cdk deploy`.
 
 | Resource | Configuration |
 |----------|---------------|
-| **Lambda ×4** | ARM64 container images from one Dockerfile (different `cmd`): `ingest` (512 MB/30 s), `commander` (1024 MB/120 s), `consolidate` (512 MB/300 s), `webapp` (1024 MB/30 s) |
+| **Lambda ×4** | ARM64 container images from one Dockerfile (different `cmd`): `ingest` (512 MB/30 s), `commander` (1024 MB/120 s), `consolidate` (512 MB/300 s), `webapp` (1024 MB/90 s) |
 | **API Gateway** | HTTP API, `POST /incidents` → ingest, `prod` stage, throttle rate 20 / burst 10 |
 | **Function URLs** | ingest, commander, webapp (the webapp URL is the demo) |
-| **Bedrock IAM** | `bedrock:InvokeModel` on `anthropic.*`, `amazon.*`, and inference-profiles (commander + consolidate only) |
+| **Bedrock IAM** | `bedrock:InvokeModel` on `anthropic.*`, `amazon.*`, and inference-profiles (commander, consolidate, and webapp — the last for the live `/api/agent` turn) |
 | **KMS** | `ECC_NIST_P256` SIGN_VERIFY key; `kms:Sign/Verify/GetPublicKey` granted to consolidate |
 | **Secrets Manager** | `backcast/database-url` (DSN + CA cert) read by all; `backcast/webhook-secret` read by ingest |
 | **S3** | versioned, private, SSE-S3, 90-day lifecycle; write to ingest, read to commander, read/write to consolidate |
@@ -338,7 +338,7 @@ IAM is least-privilege per function (only the grants each handler needs).
 | Least-privilege IAM | Per-Lambda scoped grants (secret, bucket, model, key) | blast radius of a compromised function |
 | Secrets isolation | DSN + CA cert + webhook secret in Secrets Manager; CA written to `/tmp` at runtime | credential leakage from images/env |
 | Tamper evidence | Hash-chained ledger + KMS-signed root-hash checkpoints | silent history rewriting |
-| Safe autonomy | Fencing generation + idempotency + state verification | split-brain double-execution |
+| Safe autonomy | Fencing generation + recorded idempotency key | split-brain double-execution |
 | Temporal integrity | `AS OF SYSTEM TIME` MVCC snapshots | hindsight leaking into past reconstructions |
 | Transport | TLS everywhere; CockroachDB `sslmode=verify-full` with the cluster CA | MITM |
 

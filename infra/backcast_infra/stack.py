@@ -1,6 +1,6 @@
 """The Backcast AWS stack.
 
-Serverless and cost-frugal: three container Lambdas (ingest / commander /
+Serverless and cost-frugal: four container Lambdas (ingest / commander /
 consolidate) share one image, reason with Amazon Bedrock, store artifacts in S3,
 read the CockroachDB DSN from Secrets Manager, and are scheduled + observed via
 EventBridge and CloudWatch. IAM is least-privilege per function.

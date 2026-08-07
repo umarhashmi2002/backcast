@@ -53,6 +53,7 @@ from .models import (
 from .procedural import ProceduralStore
 from .semantic import SemanticStore
 from .temporal import TemporalReconstructor
+from .working import WorkingMemoryStore
 
 __all__ = [
     "ActionLeaseCoordinator",
@@ -90,5 +91,6 @@ __all__ = [
     "SemanticStore",
     "Severity",
     "TemporalReconstructor",
+    "WorkingMemoryStore",
     "build_embedder",
 ]

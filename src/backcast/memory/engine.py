@@ -16,6 +16,7 @@ from .models import RecalledEvidence
 from .procedural import ProceduralStore
 from .semantic import SemanticStore
 from .temporal import TemporalReconstructor
+from .working import WorkingMemoryStore
 
 
 class MemoryEngine:
@@ -44,6 +45,7 @@ class MemoryEngine:
         self.ledger = EventLedger(self.conn)
         self.beliefs = BeliefStore(self.conn)
         self.temporal = TemporalReconstructor(self.conn)
+        self.working = WorkingMemoryStore(self.conn)
         self.leases = ActionLeaseCoordinator(self.conn)
         self.semantic = SemanticStore(self.conn, self.embedder, self.settings)
         self.procedural = ProceduralStore(self.conn, self.embedder, self.settings)

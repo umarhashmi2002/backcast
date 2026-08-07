@@ -26,6 +26,8 @@ class CommanderResult:
     steps: int
     tool_calls: list[str] = field(default_factory=list)
     claimed_action: str | None = None
+    # Working-memory session holding this turn's scratchpad (TTL-expired).
+    session_id: UUID | None = None
 
 
 class IncidentCommander:
@@ -54,6 +56,14 @@ class IncidentCommander:
         tool_calls: list[str] = []
         claimed_action: str | None = None
 
+        # The turn log is working memory: a disposable scratchpad that CockroachDB
+        # expires on its own (Row-Level TTL). Persisting it means a worker that
+        # takes over a fenced lease, or a reviewer afterwards, can see the context
+        # a decision was made in. Nothing here is a source of truth.
+        working = self._engine.working
+        session_id = working.open_session(org_id, iid, worker_id=worker_id)
+        working.record_turns(org_id, session_id, [("user", signal)], incident_id=iid)
+
         for step in range(self._max_steps):
             response = self._llm.converse(SYSTEM_PROMPT, messages, TOOL_SPECS)
             messages.append(
@@ -62,12 +72,17 @@ class IncidentCommander:
 
             if response.stop_reason != "tool_use" or not response.tool_uses:
                 log.info("commander.done", incident_id=str(iid), steps=step + 1)
+                working.record_turns(
+                    org_id, session_id, [("assistant", response.text)], incident_id=iid
+                )
+                working.close_session(session_id, summary=response.text[:2000] or None)
                 return CommanderResult(
                     incident_id=iid,
                     final_text=response.text,
                     steps=step + 1,
                     tool_calls=tool_calls,
                     claimed_action=claimed_action,
+                    session_id=session_id,
                 )
 
             results: list[ToolResult] = []
@@ -79,11 +94,29 @@ class IncidentCommander:
                 results.append(ToolResult(use.tool_use_id, output, is_error=is_error))
             messages.append(Message(role="user", tool_results=results))
 
+            # One batched write per step rather than per turn: a Lambda pays a
+            # round trip per statement against CockroachDB Cloud.
+            turns: list[tuple[str, str]] = []
+            if response.text:
+                turns.append(("assistant", response.text))
+            turns.append(
+                (
+                    "tool",
+                    ", ".join(
+                        f"{u.name} -> {r.content}"
+                        for u, r in zip(response.tool_uses, results, strict=True)
+                    ),
+                )
+            )
+            working.record_turns(org_id, session_id, turns, incident_id=iid)
+
         log.warning("commander.max_steps", incident_id=str(iid), steps=self._max_steps)
+        working.close_session(session_id, summary="reached step limit before concluding")
         return CommanderResult(
             incident_id=iid,
             final_text="Reached step limit before concluding.",
             steps=self._max_steps,
             tool_calls=tool_calls,
             claimed_action=claimed_action,
+            session_id=session_id,
         )

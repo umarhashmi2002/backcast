@@ -114,7 +114,7 @@ full-DB rewrite. The signature is **not** an independent timestamp; external tim
 from the **CloudTrail** signing event and the (optionally Object-Lock-protected) **S3** object. S3
 Object Lock export is designed but **not enabled** in the current demo.
 
-### 3.5 Fencing tokens + idempotency + state verification  (mitigates T4)
+### 3.5 Fencing tokens + a recorded idempotency key  (mitigates T4)
 Action leases use `UNIQUE(org_id, action_key)` (one owner), a `lease_generation` fencing token
 (bumped on takeover; every mutating call is gated on holder **and** generation **and** non-expiry),
 and an idempotency key on the external effect. A worker that revives after takeover carries a stale

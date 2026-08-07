@@ -25,10 +25,11 @@ happy path — it requires safe defaults, least privilege, and provable behavior
 - **Fencing tokens.** Every takeover bumps `lease_generation`; writes/completions are gated on
   `holder = me AND lease_generation = mine AND not expired`. An expired lease proves the holder failed
   to renew — *not* that it is dead — so a revived stale worker is **fenced out** and cannot finalize.
-- **Idempotency + state verification.** `UNIQUE(idempotency_key)` plus checking external state before
-  acting make the effect *safely repeatable*. Because a DB transaction cannot atomically commit with an
-  external AWS side effect, Backcast does **not** claim "exactly-once execution" — it guarantees one
-  canonical action intent with safe repetition.
+- **Idempotency.** Each claim records a `UNIQUE(idempotency_key)`, which is what an executor would
+  present to make its effect *safely repeatable*. Because a DB transaction cannot atomically commit
+  with an external AWS side effect, Backcast does **not** claim "exactly-once execution" — it
+  guarantees one canonical action intent with safe repetition. Note that **this build never executes
+  the action**: the lease is claimed and held, so no external state is read or written.
 - **SQL-safe reconstruction.** `AS OF SYSTEM TIME` requires a constant; the HLC is validated against a
   strict decimal regex and ids are validated before inlining.
 
