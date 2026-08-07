@@ -59,6 +59,12 @@ _REPO_ROOT = Path(__file__).resolve().parents[2]
 _BEDROCK_MODEL_ID = "us.amazon.nova-pro-v1:0"
 _EMBEDDING_MODEL_ID = "amazon.titan-embed-text-v2:0"
 
+# Region of the CockroachDB Cloud cluster the DSN in Secrets Manager points at.
+# Co-located with the Lambdas: every agent turn and counterfactual replay is a
+# chain of dependent round trips, so a cross-region cluster multiplies the whole
+# request by the inter-region RTT.
+_DATABASE_REGION = "us-east-1"
+
 
 class BackcastStack(Stack):
     def __init__(self, scope: Construct, construct_id: str, **kwargs: object) -> None:
@@ -96,6 +102,12 @@ class BackcastStack(Stack):
             "BACKCAST_ARTIFACT_BUCKET": artifacts.bucket_name,
             "BACKCAST_BEDROCK_MODEL_ID": model_id,
             "BACKCAST_EMBEDDING_MODEL_ID": _EMBEDDING_MODEL_ID,
+            # Informational, and load-bearing on cutover: the DSN is resolved once
+            # per execution environment (lru_cache), so warm containers keep using
+            # whichever cluster they first read. Bumping this value changes the
+            # function configuration, which retires warm containers and forces the
+            # secret to be re-read. Update it whenever the cluster moves region.
+            "BACKCAST_DB_REGION": _DATABASE_REGION,
         }
 
         def make_fn(

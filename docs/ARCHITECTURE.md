@@ -318,6 +318,7 @@ single `cdk deploy`.
 
 | Resource | Configuration |
 |----------|---------------|
+| **CockroachDB Cloud** | Basic cluster in **AWS us-east-1** — deliberately co-located with the Lambdas. An agent turn and a counterfactual replay are both chains of *dependent* round trips, so total latency is `n × RTT`; running the cluster in another region multiplies the whole request. Measured: the same replay took 6.8 s against an `ap-south-1` cluster and **1.15 s** after co-locating, with no code change. The region is surfaced to the functions as `BACKCAST_DB_REGION`. |
 | **Lambda ×4** | ARM64 container images from one Dockerfile (different `cmd`): `ingest` (512 MB/30 s), `commander` (1024 MB/120 s), `consolidate` (512 MB/300 s), `webapp` (1024 MB/90 s) |
 | **API Gateway** | HTTP API, `POST /incidents` → ingest, `prod` stage, throttle rate 20 / burst 10 |
 | **Function URLs** | ingest, commander, webapp (the webapp URL is the demo) |
