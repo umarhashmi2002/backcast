@@ -32,9 +32,10 @@ def _find_openapi() -> Path | None:
     task_root = os.environ.get("LAMBDA_TASK_ROOT")
     candidates = [
         Path(__file__).resolve().parents[3] / "docs" / "openapi.yaml",  # source checkout
-        *( [Path(task_root) / "docs" / "openapi.yaml"] if task_root else [] ),  # image bundle
+        *([Path(task_root) / "docs" / "openapi.yaml"] if task_root else []),  # image bundle
     ]
     return next((p for p in candidates if p.is_file()), None)
+
 
 app = FastAPI(title="Backcast", description="Temporal decision laboratory for on-call.")
 handler = Mangum(app)  # AWS Lambda entry point (API Gateway / Function URL)
@@ -128,27 +129,45 @@ def counterfactual(org: str = "demo", payload: dict[str, Any] | None = None) -> 
         raise HTTPException(status_code=400, detail=f"unknown scenario '{scenario_key}'")
     scenario = SCENARIOS[scenario_key]
     chosen = payload.get("actual_remediation")
-    default_actual = "restart-service" if "restart-service" in scenario.remediations else next(iter(scenario.remediations))
+    default_actual = (
+        "restart-service"
+        if "restart-service" in scenario.remediations
+        else next(iter(scenario.remediations))
+    )
     actual = [str(chosen)] if chosen else [default_actual]
     if actual[0] not in scenario.remediations:
-        raise HTTPException(status_code=400, detail=f"'{actual[0]}' is not a remediation of '{scenario_key}'")
+        raise HTTPException(
+            status_code=400, detail=f"'{actual[0]}' is not a remediation of '{scenario_key}'"
+        )
 
     engine = _engine()
     try:
         iid = engine.incidents.create(
-            org, scenario.description, "payments-api",
-            external_id=f"cf-{uuid4().hex[:8]}", scenario=scenario_key,
+            org,
+            scenario.description,
+            "payments-api",
+            external_id=f"cf-{uuid4().hex[:8]}",
+            scenario=scenario_key,
         )["id"]
-        engine.evidence.record(Evidence(
-            org_id=org, incident_id=iid, kind=EvidenceKind.metric, content=scenario.description,
-        ))
+        engine.evidence.record(
+            Evidence(
+                org_id=org,
+                incident_id=iid,
+                kind=EvidenceKind.metric,
+                content=scenario.description,
+            )
+        )
         hypothesis = engine.beliefs.create_hypothesis(org, iid, scenario.true_cause)
         assert hypothesis.id is not None
-        engine.beliefs.set_belief(org, iid, hypothesis.id, 0.7, rationale="leading hypothesis at onset")
+        engine.beliefs.set_belief(
+            org, iid, hypothesis.id, 0.7, rationale="leading hypothesis at onset"
+        )
         fork_hlc = engine.temporal.capture_hlc()
         engine.incidents.set_status(iid, IncidentStatus.resolved, resolution=f"applied {actual[0]}")
 
-        report = engine.counterfactual.run(org, iid, actual_remediations=actual, forked_at_hlc=fork_hlc)
+        report = engine.counterfactual.run(
+            org, iid, actual_remediations=actual, forked_at_hlc=fork_hlc
+        )
         ordered = sorted(report.branches, key=lambda b: b.outcome.score, reverse=True)
         return {
             "incident_id": str(iid),
@@ -172,7 +191,9 @@ def simulate(payload: dict[str, Any] | None = None) -> dict[str, Any]:
     true_cause = str(payload.get("true_cause") or "").strip()
     rem_specs = payload.get("remediations")
     if not true_cause or not isinstance(rem_specs, dict) or not rem_specs:
-        raise HTTPException(status_code=400, detail="true_cause and at least one remediation are required")
+        raise HTTPException(
+            status_code=400, detail="true_cause and at least one remediation are required"
+        )
 
     remediations: dict[str, RemediationEffect] = {}
     for name, spec in rem_specs.items():
@@ -185,8 +206,10 @@ def simulate(payload: dict[str, Any] | None = None) -> dict[str, Any]:
             cost=float(s.get("cost", 1.0)),
         )
     scenario = Scenario(
-        key="custom", true_cause=true_cause,
-        description=str(payload.get("description") or true_cause), remediations=remediations,
+        key="custom",
+        true_cause=true_cause,
+        description=str(payload.get("description") or true_cause),
+        remediations=remediations,
     )
     raw_actual = payload.get("actual") or []
     actual = [str(a) for a in raw_actual] if isinstance(raw_actual, list) else [str(raw_actual)]
@@ -194,11 +217,19 @@ def simulate(payload: dict[str, Any] | None = None) -> dict[str, Any]:
 
     model = DeterministicIncidentModel()
     branches: list[BranchResult] = [
-        BranchResult("actual", "actual", actual, is_actual=True, outcome=model.simulate(scenario, actual))
+        BranchResult(
+            "actual", "actual", actual, is_actual=True, outcome=model.simulate(scenario, actual)
+        )
     ]
     for name in remediations:
         branches.append(
-            BranchResult(name, f"fork:{name}", [name], is_actual=False, outcome=model.simulate(scenario, [name]))
+            BranchResult(
+                name,
+                f"fork:{name}",
+                [name],
+                is_actual=False,
+                outcome=model.simulate(scenario, [name]),
+            )
         )
     comparison = compare(branches)
     best = comparison.best
@@ -227,25 +258,43 @@ def incident(org: str = "demo") -> dict[str, Any]:
         iid = engine.incidents.create(
             org, "payments-api 5xx spike", "payments-api", external_id=f"inc-{uuid4().hex[:8]}"
         )["id"]
-        engine.ledger.append(org, iid, "incident_opened", {"service": "payments-api"}, actor="agent")
+        engine.ledger.append(
+            org, iid, "incident_opened", {"service": "payments-api"}, actor="agent"
+        )
 
-        engine.evidence.record(Evidence(
-            org_id=org, incident_id=iid, kind=EvidenceKind.metric, source="prometheus",
-            content="API error rate climbing to 5%; DB connection pool at 94%",
-        ))
+        engine.evidence.record(
+            Evidence(
+                org_id=org,
+                incident_id=iid,
+                kind=EvidenceKind.metric,
+                source="prometheus",
+                content="API error rate climbing to 5%; DB connection pool at 94%",
+            )
+        )
         surge = engine.beliefs.create_hypothesis(org, iid, "Traffic surge overwhelming the service")
-        deploy = engine.beliefs.create_hypothesis(org, iid, "Recent deploy introduced a connection leak")
+        deploy = engine.beliefs.create_hypothesis(
+            org, iid, "Recent deploy introduced a connection leak"
+        )
         assert surge.id is not None
         assert deploy.id is not None
-        engine.beliefs.set_belief(org, iid, surge.id, 0.58, rationale="error rate up; no deploy link yet")
+        engine.beliefs.set_belief(
+            org, iid, surge.id, 0.58, rationale="error rate up; no deploy link yet"
+        )
         engine.beliefs.set_belief(org, iid, deploy.id, 0.11, rationale="no deploy evidence yet")
         t1_hlc = engine.temporal.capture_hlc()
 
-        engine.evidence.record(Evidence(
-            org_id=org, incident_id=iid, kind=EvidenceKind.deploy, source="argocd",
-            content="Deploy v2.4.1 shipped 6 minutes before degradation; touches the DB pool config",
-        ))
-        engine.beliefs.set_belief(org, iid, deploy.id, 0.87, rationale="deploy v2.4.1 correlated 6m before")
+        engine.evidence.record(
+            Evidence(
+                org_id=org,
+                incident_id=iid,
+                kind=EvidenceKind.deploy,
+                source="argocd",
+                content="Deploy v2.4.1 shipped 6 minutes before degradation; touches the DB pool config",
+            )
+        )
+        engine.beliefs.set_belief(
+            org, iid, deploy.id, 0.87, rationale="deploy v2.4.1 correlated 6m before"
+        )
         engine.beliefs.set_belief(org, iid, surge.id, 0.08, rationale="traffic within normal range")
 
         past = engine.temporal.reconstruct(iid, t1_hlc)
@@ -317,7 +366,9 @@ def race(org: str = "demo", workers: int = 20) -> dict[str, Any]:
         return row is not None
 
     a = _engine()
-    claim = a.leases.claim(org, iid, crash_key, holder="worker-A", ttl_seconds=1, idempotency_key=idem)
+    claim = a.leases.claim(
+        org, iid, crash_key, holder="worker-A", ttl_seconds=1, idempotency_key=idem
+    )
     assert claim.lease_id is not None
     a.leases.mark_executing(claim.lease_id, "worker-A", claim.lease_generation)
     apply_effect(a, "worker-A")
@@ -364,7 +415,9 @@ def agent_turn(org: str = "demo", payload: dict[str, Any] | None = None) -> dict
     engine = _engine()
     try:
         iid = engine.incidents.create(
-            org, signal[:80], "user-incident",
+            org,
+            signal[:80],
+            "user-incident",
             external_id=f"ag-{uuid4().hex[:8]}",
             scenario=str(scenario_key) if scenario_key else None,
         )["id"]
@@ -378,7 +431,9 @@ def agent_turn(org: str = "demo", payload: dict[str, Any] | None = None) -> dict
             "WHERE b.incident_id = %s AND b.valid_until IS NULL ORDER BY b.confidence DESC",
             (iid,),
         ).fetchall()
-        beliefs = [{"statement": r["statement"], "confidence": float(r["confidence"])} for r in rows]
+        beliefs = [
+            {"statement": r["statement"], "confidence": float(r["confidence"])} for r in rows
+        ]
 
         return {
             "incident_id": str(iid),

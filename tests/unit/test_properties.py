@@ -35,27 +35,38 @@ _timestamps = st.integers(min_value=0, max_value=2_000_000_000)
 def test_valid_signature_always_verifies(secret: str, body: bytes, ts: int) -> None:
     sig = sign_payload(secret, body, ts)
     # Verified at the exact same instant → always within max_age.
-    assert verify_webhook(secret=secret, body=body, signature=sig, timestamp=str(ts), now=ts) is True
+    assert (
+        verify_webhook(secret=secret, body=body, signature=sig, timestamp=str(ts), now=ts) is True
+    )
 
 
-@given(secret=_secrets, body=_bodies, ts=_timestamps, skew=st.integers(min_value=301, max_value=10_000))
+@given(
+    secret=_secrets, body=_bodies, ts=_timestamps, skew=st.integers(min_value=301, max_value=10_000)
+)
 def test_stale_timestamp_is_rejected(secret: str, body: bytes, ts: int, skew: int) -> None:
     sig = sign_payload(secret, body, ts)
-    assert verify_webhook(secret=secret, body=body, signature=sig, timestamp=str(ts), now=ts + skew) is False
+    assert (
+        verify_webhook(secret=secret, body=body, signature=sig, timestamp=str(ts), now=ts + skew)
+        is False
+    )
 
 
 @given(secret=_secrets, body=_bodies, ts=_timestamps, other=_bodies)
 def test_body_tampering_is_detected(secret: str, body: bytes, ts: int, other: bytes) -> None:
     assume(other != body)
     sig = sign_payload(secret, body, ts)
-    assert verify_webhook(secret=secret, body=other, signature=sig, timestamp=str(ts), now=ts) is False
+    assert (
+        verify_webhook(secret=secret, body=other, signature=sig, timestamp=str(ts), now=ts) is False
+    )
 
 
 @given(secret=_secrets, other=_secrets, body=_bodies, ts=_timestamps)
 def test_wrong_secret_is_rejected(secret: str, other: str, body: bytes, ts: int) -> None:
     assume(other != secret)
     sig = sign_payload(secret, body, ts)
-    assert verify_webhook(secret=other, body=body, signature=sig, timestamp=str(ts), now=ts) is False
+    assert (
+        verify_webhook(secret=other, body=body, signature=sig, timestamp=str(ts), now=ts) is False
+    )
 
 
 # --------------------------------------------------------------------------- #
@@ -89,7 +100,9 @@ def test_cosine_from_l2_is_antitone(distances: list[float]) -> None:
 def test_l2_ranking_equals_cosine_ranking(raw_q: list[float], raw_cands: list[float]) -> None:
     """Ordering candidates by ascending L2 yields non-increasing cosine similarity."""
     assume(math.sqrt(sum(x * x for x in raw_q)) > 1e-6)
-    cands = [c for c in raw_cands if len(c) == len(raw_q) and math.sqrt(sum(x * x for x in c)) > 1e-6]
+    cands = [
+        c for c in raw_cands if len(c) == len(raw_q) and math.sqrt(sum(x * x for x in c)) > 1e-6
+    ]
     assume(len(cands) >= 2)
     q = _unit(raw_q)
     unit_cands = [_unit(c) for c in cands]
@@ -110,28 +123,59 @@ _unnec = st.integers(min_value=0, max_value=10)
 
 
 @given(recurred=st.booleans(), t=_time, u=_unnec, risk=_risk, cost=_cost)
-def test_score_upper_bound_and_no_leak(recurred: bool, t: float, u: int, risk: float, cost: float) -> None:
+def test_score_upper_bound_and_no_leak(
+    recurred: bool, t: float, u: int, risk: float, cost: float
+) -> None:
     recovered_score = score_outcome(
-        recovered=True, recurred=recurred, time_to_recovery_s=t, unnecessary_actions=u, risk=risk, cost=cost
+        recovered=True,
+        recurred=recurred,
+        time_to_recovery_s=t,
+        unnecessary_actions=u,
+        risk=risk,
+        cost=cost,
     )
     failed_score = score_outcome(
-        recovered=False, recurred=recurred, time_to_recovery_s=t, unnecessary_actions=u, risk=risk, cost=cost
+        recovered=False,
+        recurred=recurred,
+        time_to_recovery_s=t,
+        unnecessary_actions=u,
+        risk=risk,
+        cost=cost,
     )
     assert recovered_score <= 1.0  # base 1.0 minus non-negative penalties
     assert failed_score <= 0.0  # a non-recovered branch can never score positive
     assert recovered_score >= failed_score  # recovering is never worse, all else equal
 
 
-@given(recovered=st.booleans(), recurred=st.booleans(), t=_time, risk=_risk, cost=_cost,
-       u1=_unnec, u2=_unnec)
+@given(
+    recovered=st.booleans(),
+    recurred=st.booleans(),
+    t=_time,
+    risk=_risk,
+    cost=_cost,
+    u1=_unnec,
+    u2=_unnec,
+)
 def test_more_unnecessary_actions_never_helps(
     recovered: bool, recurred: bool, t: float, risk: float, cost: float, u1: int, u2: int
 ) -> None:
     assume(u1 <= u2)
-    lo = score_outcome(recovered=recovered, recurred=recurred, time_to_recovery_s=t,
-                       unnecessary_actions=u1, risk=risk, cost=cost)
-    hi = score_outcome(recovered=recovered, recurred=recurred, time_to_recovery_s=t,
-                       unnecessary_actions=u2, risk=risk, cost=cost)
+    lo = score_outcome(
+        recovered=recovered,
+        recurred=recurred,
+        time_to_recovery_s=t,
+        unnecessary_actions=u1,
+        risk=risk,
+        cost=cost,
+    )
+    hi = score_outcome(
+        recovered=recovered,
+        recurred=recurred,
+        time_to_recovery_s=t,
+        unnecessary_actions=u2,
+        risk=risk,
+        cost=cost,
+    )
     assert lo >= hi  # more wasted actions → lower (or equal) score
 
 
@@ -157,7 +201,9 @@ _payload = st.dictionaries(
     values=st.one_of(st.text(max_size=16), st.integers(), st.booleans()),
     max_size=5,
 )
-_entry = st.tuples(st.text(min_size=1, max_size=16), _payload, st.one_of(st.none(), st.text(max_size=12)))
+_entry = st.tuples(
+    st.text(min_size=1, max_size=16), _payload, st.one_of(st.none(), st.text(max_size=12))
+)
 
 
 def _build_chain(entries: list[tuple[str, dict[str, Any], str | None]]) -> list[dict[str, Any]]:
@@ -166,8 +212,14 @@ def _build_chain(entries: list[tuple[str, dict[str, Any], str | None]]) -> list[
     for seq, (etype, payload, actor) in enumerate(entries, start=1):
         entry_hash = compute_entry_hash(prev, seq, etype, payload, actor)
         chain.append(
-            {"seq": seq, "event_type": etype, "payload": payload, "actor": actor,
-             "prev_hash": prev, "entry_hash": entry_hash}
+            {
+                "seq": seq,
+                "event_type": etype,
+                "payload": payload,
+                "actor": actor,
+                "prev_hash": prev,
+                "entry_hash": entry_hash,
+            }
         )
         prev = entry_hash
     return chain
@@ -176,7 +228,9 @@ def _build_chain(entries: list[tuple[str, dict[str, Any], str | None]]) -> list[
 def _verify(chain: list[dict[str, Any]]) -> bool:
     prev: str | None = None
     for row in chain:
-        expected = compute_entry_hash(prev, row["seq"], row["event_type"], row["payload"], row["actor"])
+        expected = compute_entry_hash(
+            prev, row["seq"], row["event_type"], row["payload"], row["actor"]
+        )
         if expected != row["entry_hash"] or row["prev_hash"] != prev:
             return False
         prev = row["entry_hash"]
@@ -188,7 +242,9 @@ def test_wellformed_chain_verifies(entries: list[tuple[str, dict[str, Any], str 
     assert _verify(_build_chain(entries)) is True
 
 
-@given(entries=st.lists(_entry, min_size=1, max_size=12), idx=st.integers(min_value=0, max_value=11))
+@given(
+    entries=st.lists(_entry, min_size=1, max_size=12), idx=st.integers(min_value=0, max_value=11)
+)
 def test_payload_tampering_breaks_the_chain(
     entries: list[tuple[str, dict[str, Any], str | None]], idx: int
 ) -> None:

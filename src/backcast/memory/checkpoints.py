@@ -85,8 +85,11 @@ class KmsSigner:
     def verify(self, message: bytes, signature: bytes) -> bool:
         try:
             resp = self._kms.verify(
-                KeyId=self.key_id, Message=message, MessageType="RAW",
-                Signature=signature, SigningAlgorithm=self.algorithm,
+                KeyId=self.key_id,
+                Message=message,
+                MessageType="RAW",
+                Signature=signature,
+                SigningAlgorithm=self.algorithm,
             )
             return bool(resp["SignatureValid"])
         except Exception as exc:  # verification failure or transient error
@@ -125,12 +128,26 @@ class LedgerCheckpointer:
             "INSERT INTO ledger_checkpoints "
             "(org_id, incident_id, seq_covered, root_hash, signature, key_id, algorithm) "
             "VALUES (%s, %s, %s, %s, %s, %s, %s)",
-            (org_id, incident_id, seq, root, signature, self._signer.key_id, self._signer.algorithm),
+            (
+                org_id,
+                incident_id,
+                seq,
+                root,
+                signature,
+                self._signer.key_id,
+                self._signer.algorithm,
+            ),
         )
-        log.info("checkpoint.created", incident_id=str(incident_id), seq=seq, key_id=self._signer.key_id)
+        log.info(
+            "checkpoint.created", incident_id=str(incident_id), seq=seq, key_id=self._signer.key_id
+        )
         return Checkpoint(
-            incident_id=UUID(str(incident_id)), seq_covered=seq, root_hash=root,
-            signature=signature, key_id=self._signer.key_id, algorithm=self._signer.algorithm,
+            incident_id=UUID(str(incident_id)),
+            seq_covered=seq,
+            root_hash=root,
+            signature=signature,
+            key_id=self._signer.key_id,
+            algorithm=self._signer.algorithm,
         )
 
     def verify_latest(self, incident_id: UUID | str) -> bool:
@@ -144,7 +161,9 @@ class LedgerCheckpointer:
         ).fetchone()
         if cp is None:
             return True  # chain verified; nothing checkpointed yet
-        if not self._signer.verify(str(cp["root_hash"]).encode(), base64.b64decode(cp["signature"])):
+        if not self._signer.verify(
+            str(cp["root_hash"]).encode(), base64.b64decode(cp["signature"])
+        ):
             return False
         entry = self._engine.conn.execute(
             "SELECT entry_hash FROM event_ledger WHERE incident_id = %s AND seq = %s",

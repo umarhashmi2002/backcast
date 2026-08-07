@@ -144,7 +144,7 @@ def test_ledger_checkpoint_signs_and_detects_tampering(engine: MemoryEngine, org
 
     # Tampering with an earlier ledger payload breaks chain verification.
     engine.conn.execute(
-        "UPDATE event_ledger SET payload = '{\"service\":\"hacked\"}'::JSONB "
+        'UPDATE event_ledger SET payload = \'{"service":"hacked"}\'::JSONB '
         "WHERE incident_id = %s AND seq = 1",
         (iid,),
     )

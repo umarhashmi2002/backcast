@@ -101,7 +101,9 @@ class TemporalReconstructor:
                 kind=row["kind"],
                 content=row["content"],
                 observed_at=row["observed_at"],
-                distance=round(1.0 - cosine_similarity(query_embedding, parse_vector(row["emb"])), 4),
+                distance=round(
+                    1.0 - cosine_similarity(query_embedding, parse_vector(row["emb"])), 4
+                ),
                 score=round(cosine_similarity(query_embedding, parse_vector(row["emb"])), 4),
             )
             for row in rows
