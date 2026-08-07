@@ -10,11 +10,12 @@ from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
-from uuid import UUID
+from typing import TYPE_CHECKING, Any
+from uuid import UUID, uuid4
 
 from psycopg.types.json import Json
 
+from ..memory.models import BeliefState
 from ..telemetry import get_logger
 from .comparator import BranchResult, Comparison, compare
 from .model import DeterministicIncidentModel
@@ -37,6 +38,9 @@ class SimulationReport:
     decision_regret: float
     lesson: str | None
     run_id: UUID
+    # What the agent actually knew at forked_at_hlc, reconstructed via AS OF SYSTEM
+    # TIME. None when no fork point was supplied (nothing to rewind to).
+    forked_state: BeliefState | None = None
 
 
 class CounterfactualService:
@@ -60,8 +64,14 @@ class CounterfactualService:
         *,
         forked_at_hlc: str | None = None,
         is_actual: bool = False,
+        scenario: Scenario | None = None,
     ) -> BranchResult:
-        scenario = self._scenario_for(incident_id)
+        """Simulate and persist one branch.
+
+        ``run`` uses the batched path below; this remains the single-branch entry
+        point. Pass ``scenario`` to skip the incident lookup.
+        """
+        scenario = scenario or self._scenario_for(incident_id)
         outcome = self._model.simulate(scenario, remediations)
         rem = list(remediations)
         with self._engine.conn.transaction():
@@ -117,25 +127,31 @@ class CounterfactualService:
         candidates: Mapping[str, Sequence[str]] | None = None,
         forked_at_hlc: str | None = None,
     ) -> SimulationReport:
-        """Simulate the actual choice + alternatives, compare, and promote the best lesson."""
-        scenario = self._scenario_for(incident_id)
+        """Rewind to the fork point, simulate the actual choice + alternatives, compare, learn.
+
+        When ``forked_at_hlc`` is given this is a genuine rewind: the incident is
+        read through ``AS OF SYSTEM TIME`` at that HLC, and the belief/evidence
+        state as of that instant is reconstructed and returned on the report. The
+        fork therefore derives from what was known at the decision point, and
+        anything recorded afterwards is invisible to it by MVCC — including the
+        resolution written when the incident was closed.
+        """
+        scenario = self._scenario_for(incident_id, as_of_hlc=forked_at_hlc)
+        forked_state = (
+            self._engine.temporal.reconstruct(incident_id, forked_at_hlc)
+            if forked_at_hlc is not None
+            else None
+        )
         candidate_sets = candidates or self.default_candidates(scenario)
 
-        actual = self.simulate_branch(
-            org_id,
-            incident_id,
-            "actual",
-            actual_remediations,
-            forked_at_hlc=forked_at_hlc,
-            is_actual=True,
+        specs: list[tuple[str, list[str], bool]] = [
+            ("actual", list(actual_remediations), True),
+            *((f"fork:{label}", list(rem), False) for label, rem in candidate_sets.items()),
+        ]
+        branches = self._simulate_batch(
+            org_id, incident_id, scenario, specs, forked_at_hlc=forked_at_hlc
         )
-        branches = [actual]
-        for label, rem in candidate_sets.items():
-            branches.append(
-                self.simulate_branch(
-                    org_id, incident_id, f"fork:{label}", rem, forked_at_hlc=forked_at_hlc
-                )
-            )
+        actual = branches[0]
 
         comparison = compare(branches)
         lesson: str | None = None
@@ -153,11 +169,96 @@ class CounterfactualService:
             decision_regret=comparison.decision_regret,
             lesson=lesson,
             run_id=run_id,
+            forked_state=forked_state,
         )
 
     # --- internals ---------------------------------------------------------
-    def _scenario_for(self, incident_id: UUID | str) -> Scenario:
-        incident = self._engine.incidents.get(incident_id)
+    def _simulate_batch(
+        self,
+        org_id: str,
+        incident_id: UUID | str,
+        scenario: Scenario,
+        specs: Sequence[tuple[str, list[str], bool]],
+        *,
+        forked_at_hlc: str | None,
+    ) -> list[BranchResult]:
+        """Simulate and persist every branch in one transaction plus one ledger append.
+
+        Semantically identical to calling :meth:`simulate_branch` per spec, but it
+        costs a fixed handful of round trips instead of four per branch. Outcomes
+        are pure functions of the scenario, so they are all computed in memory
+        first; branch ids are generated client-side so the two multi-row INSERTs
+        need no ``RETURNING`` ordering guarantee.
+        """
+        outcomes = [(label, rem, is_actual) for label, rem, is_actual in specs]
+        results: list[BranchResult] = []
+        branch_rows: list[tuple[Any, ...]] = []
+        outcome_rows: list[tuple[Any, ...]] = []
+
+        for label, rem, is_actual in outcomes:
+            branch_id = uuid4()
+            outcome = self._model.simulate(scenario, rem)
+            branch_rows.append(
+                (branch_id, org_id, incident_id, label, forked_at_hlc, rem, is_actual)
+            )
+            outcome_rows.append(
+                (
+                    branch_id,
+                    outcome.recovered,
+                    outcome.recurred,
+                    outcome.time_to_recovery_s,
+                    outcome.unnecessary_actions,
+                    outcome.risk,
+                    outcome.cost,
+                    outcome.score,
+                    Json(outcome.as_dict()),
+                )
+            )
+            results.append(
+                BranchResult(
+                    branch_id=branch_id,
+                    label=label,
+                    remediations=rem,
+                    is_actual=is_actual,
+                    outcome=outcome,
+                )
+            )
+
+        with self._engine.conn.transaction():
+            self._engine.conn.execute(
+                "INSERT INTO incident_branches "
+                "(id, org_id, incident_id, label, forked_at_hlc, remediations, is_actual) VALUES "
+                + ", ".join(["(%s, %s, %s, %s, %s, %s, %s)"] * len(branch_rows)),
+                [v for row in branch_rows for v in row],
+            )
+            self._engine.conn.execute(
+                "INSERT INTO branch_outcomes (branch_id, recovered, recurred, time_to_recovery_s, "
+                "unnecessary_actions, risk, cost, score, detail) VALUES "
+                + ", ".join(["(%s, %s, %s, %s, %s, %s, %s, %s, %s)"] * len(outcome_rows)),
+                [v for row in outcome_rows for v in row],
+            )
+
+        self._engine.ledger.append_many(
+            org_id,
+            incident_id,
+            [
+                (
+                    "branch_simulated",
+                    {
+                        "label": r.label,
+                        "remediations": r.remediations,
+                        "score": r.outcome.score,
+                        "recovered": r.outcome.recovered,
+                    },
+                )
+                for r in results
+            ],
+            actor="counterfactual",
+        )
+        return results
+
+    def _scenario_for(self, incident_id: UUID | str, *, as_of_hlc: str | None = None) -> Scenario:
+        incident = self._engine.incidents.get(incident_id, as_of_hlc=as_of_hlc)
         if incident is None:
             raise ValueError(f"unknown incident: {incident_id}")
         key = incident.get("scenario")

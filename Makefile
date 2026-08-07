@@ -5,7 +5,7 @@
 SHELL := /bin/bash
 
 .PHONY: help bootstrap sync lint format typecheck test test-integration \
-        db-up db-down db-migrate seed demo race-demo web deploy synth clean
+        db-up db-down db-migrate seed demo race-demo web web-bedrock deploy synth clean
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z0-9_-]+:.*?## .*$$' $(MAKEFILE_LIST) \
@@ -54,7 +54,11 @@ demo: ## Narrate all five memory mechanisms against the database
 race-demo: ## Action-lease concurrency + crash-safety demo (25 workers, crash & resume)
 	uv run python scripts/concurrency_demo.py
 
-web: ## Run the interactive web demo at http://localhost:8000
+web: ## Run the interactive web demo at http://localhost:8000 (offline embeddings)
+	BACKCAST_EMBEDDING_MODEL_ID=hash \
+		uv run --extra web uvicorn backcast.webapp.app:app --host 0.0.0.0 --port 8000
+
+web-bedrock: ## Same, but with real Titan v2 embeddings (needs AWS credentials)
 	uv run --extra web uvicorn backcast.webapp.app:app --host 0.0.0.0 --port 8000
 
 synth: ## Synthesize the CDK CloudFormation templates

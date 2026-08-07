@@ -9,6 +9,7 @@ from psycopg.types.json import Json
 
 from ..db.connection import Connection
 from .models import IncidentStatus, Severity
+from .temporal import validate_hlc
 
 
 class IncidentStore:
@@ -95,12 +96,30 @@ class IncidentStore:
         params.append(limit)
         return self._conn.execute(sql, params).fetchall()
 
-    def get(self, incident_id: UUID | str) -> dict[str, Any] | None:
+    _COLS = (
+        "id, org_id, external_id, title, summary, service, severity, status, "
+        "state_version, resolution, scenario, created_at, resolved_at"
+    )
+
+    def get(
+        self, incident_id: UUID | str, *, as_of_hlc: str | None = None
+    ) -> dict[str, Any] | None:
+        """Fetch an incident, optionally as it existed at ``as_of_hlc``.
+
+        With ``as_of_hlc`` the read goes through ``AS OF SYSTEM TIME``, so rows
+        written after that HLC are invisible (MVCC, not app filtering). The
+        timestamp and id are validated and inlined because ``AS OF SYSTEM TIME``
+        requires a constant expression rather than a bind placeholder.
+        """
+        if as_of_hlc is None:
+            return self._conn.execute(
+                f"SELECT {self._COLS} FROM incidents WHERE id = %s",
+                (incident_id,),
+            ).fetchone()
+        validate_hlc(as_of_hlc)
+        iid = str(UUID(str(incident_id)))
         return self._conn.execute(
-            "SELECT id, org_id, external_id, title, summary, service, severity, status, "
-            "state_version, resolution, scenario, created_at, resolved_at "
-            "FROM incidents WHERE id = %s",
-            (incident_id,),
+            f"SELECT {self._COLS} FROM incidents AS OF SYSTEM TIME '{as_of_hlc}' WHERE id = '{iid}'"
         ).fetchone()
 
     def set_status(

@@ -15,16 +15,16 @@ from mangum import Mangum
 
 from ..agent import BedrockLLM, IncidentCommander
 from ..api.runtime import get_database_url
-from ..config import Settings
 from ..db.connection import connect
-from ..memory import HashEmbedder, MemoryEngine
+from ..memory import MemoryEngine
 from ..memory.models import Belief, Evidence, EvidenceKind, IncidentStatus
 from ..simulation.comparator import BranchResult, compare
 from ..simulation.model import DeterministicIncidentModel
 from ..simulation.scenarios import SCENARIOS, RemediationEffect, Scenario
 
 _STATIC = Path(__file__).parent / "static"
-_SETTINGS = Settings(embedding_model_id="hash")
+_IN_LAMBDA = bool(os.environ.get("AWS_LAMBDA_FUNCTION_NAME"))
+_cached_engine: MemoryEngine | None = None
 
 
 def _find_openapi() -> Path | None:
@@ -45,14 +45,34 @@ if (_STATIC / "assets").is_dir():
     app.mount("/assets", StaticFiles(directory=_STATIC / "assets"), name="assets")
 
 
-def _engine() -> MemoryEngine:
-    # get_database_url() reads the Secrets Manager DSN (+ CA cert) in Lambda, or
-    # falls back to the local DSN for `make web`. Hash embeddings keep it AWS-free.
-    return MemoryEngine(
-        conn=connect(get_database_url()),
-        embedder=HashEmbedder(_SETTINGS.embedding_dims),
-        settings=_SETTINGS,
-    )
+def _engine(*, fresh: bool = False) -> MemoryEngine:
+    """Return a MemoryEngine.
+
+    The embedder is whatever ``BACKCAST_EMBEDDING_MODEL_ID`` selects — Titan v2 on
+    the deployed Lambda, the offline hash embedder when set to ``hash`` (see the
+    ``web`` Makefile target). It is not pinned here, so the running demo matches
+    what the docs claim.
+
+    On Lambda the connection is cached for the life of the execution environment,
+    which removes a TLS handshake to CockroachDB Cloud from every warm request.
+    Lambda serves one request per container at a time, so a single psycopg
+    connection is safe there. Off Lambda (``make web`` under uvicorn, where sync
+    endpoints run on a threadpool) each request gets its own connection, since a
+    psycopg connection must not be shared across concurrent threads. ``fresh``
+    forces a dedicated connection — the lease race needs one session per worker.
+    """
+    global _cached_engine
+    if fresh or not _IN_LAMBDA:
+        return MemoryEngine(conn=connect(get_database_url()))
+    if _cached_engine is None or _cached_engine.conn.closed:
+        _cached_engine = MemoryEngine(conn=connect(get_database_url()))
+    return _cached_engine
+
+
+def _release(engine: MemoryEngine) -> None:
+    """Close ``engine`` unless it is the process-cached one, which outlives the request."""
+    if engine is not _cached_engine:
+        engine.close()
 
 
 @app.get("/")
@@ -76,7 +96,7 @@ def health() -> dict[str, str]:
         engine.conn.execute("SELECT 1")
         return {"status": "ok"}
     finally:
-        engine.close()
+        _release(engine)
 
 
 def _branch_dict(b: BranchResult, best_id: object) -> dict[str, Any]:
@@ -179,9 +199,24 @@ def counterfactual(org: str = "demo", payload: dict[str, Any] | None = None) -> 
             "decision_regret": report.decision_regret,
             "lesson": report.lesson,
             "ledger_verified": engine.ledger.verify(iid),
+            # What the agent actually knew at the fork HLC, read back through
+            # AS OF SYSTEM TIME — evidence and beliefs written after the fork
+            # (including the resolution) are invisible to this view.
+            "forked_state": (
+                {
+                    "as_of_hlc": report.forked_state.as_of_hlc,
+                    "evidence": [e.content for e in report.forked_state.evidence],
+                    "beliefs": [
+                        {"confidence": b.confidence, "rationale": b.rationale}
+                        for b in report.forked_state.beliefs
+                    ],
+                }
+                if report.forked_state is not None
+                else None
+            ),
         }
     finally:
-        engine.close()
+        _release(engine)
 
 
 @app.post("/api/simulate")
@@ -326,7 +361,7 @@ def incident(org: str = "demo") -> dict[str, Any]:
             "ledger_verified": engine.ledger.verify(iid),
         }
     finally:
-        engine.close()
+        _release(engine)
 
 
 @app.post("/api/race")
@@ -334,7 +369,7 @@ def race(org: str = "demo", workers: int = 20) -> dict[str, Any]:
     """Concurrency + fencing: N workers race; a revived stale worker is fenced out."""
     workers = max(2, min(workers, 50))
     org = f"{org}-race-{uuid4().hex[:6]}"
-    setup = _engine()
+    setup = _engine(fresh=True)
     setup.conn.execute(
         "CREATE TABLE IF NOT EXISTS demo_web_effects "
         "(idempotency_key STRING PRIMARY KEY, applied_by STRING NOT NULL)"
@@ -344,7 +379,7 @@ def race(org: str = "demo", workers: int = 20) -> dict[str, Any]:
     action_key = f"rollback:{iid}"
 
     def attempt(i: int) -> bool:
-        eng = _engine()
+        eng = _engine(fresh=True)
         try:
             return eng.leases.claim(org, iid, action_key, holder=f"worker-{i}").won
         finally:
@@ -365,7 +400,7 @@ def race(org: str = "demo", workers: int = 20) -> dict[str, Any]:
         ).fetchone()
         return row is not None
 
-    a = _engine()
+    a = _engine(fresh=True)
     claim = a.leases.claim(
         org, iid, crash_key, holder="worker-A", ttl_seconds=1, idempotency_key=idem
     )
@@ -376,13 +411,13 @@ def race(org: str = "demo", workers: int = 20) -> dict[str, Any]:
     import time
 
     time.sleep(1.3)
-    b = _engine()
+    b = _engine(fresh=True)
     takeover = b.leases.take_over_if_expired(org, crash_key, holder="worker-B")
     assert takeover is not None
     assert takeover.lease_id is not None
     apply_effect(b, "worker-B")
     completed_b = b.leases.complete(takeover.lease_id, "worker-B", takeover.lease_generation)
-    a2 = _engine()
+    a2 = _engine(fresh=True)
     revived_ok = a2.leases.complete(claim.lease_id, "worker-A", claim.lease_generation)
     count = b.conn.execute(
         "SELECT count(*) AS n FROM demo_web_effects WHERE idempotency_key = %s", (idem,)
@@ -445,4 +480,4 @@ def agent_turn(org: str = "demo", payload: dict[str, Any] | None = None) -> dict
             "ledger_verified": engine.ledger.verify(iid),
         }
     finally:
-        engine.close()
+        _release(engine)

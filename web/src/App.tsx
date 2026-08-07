@@ -74,6 +74,29 @@ function BranchBars({ r }: { r: CounterfactualResult }) {
   const scale = makeScale(branches.map((b) => b.score));
   return (
     <div className="out">
+      {r.forked_state && (
+        <div className="rewind">
+          <div className="rewind-h">
+            ⏪ rewound to the decision point — reconstructed with <code>AS OF SYSTEM TIME</code> at HLC{" "}
+            {r.forked_state.as_of_hlc.slice(0, 14)}…
+          </div>
+          {r.forked_state.evidence.map((e, i) => (
+            <div key={i} className="rewind-r">
+              <b>evidence</b> {e}
+            </div>
+          ))}
+          {r.forked_state.beliefs.map((b, i) => (
+            <div key={i} className="rewind-r">
+              <b>belief</b> {Math.round(b.confidence * 100)}%
+              {b.rationale ? ` — ${b.rationale}` : ""}
+            </div>
+          ))}
+          <div className="rewind-r muted">
+            The resolution and everything recorded after this instant are invisible here — MVCC, not
+            app filtering. The forks below branch from this state.
+          </div>
+        </div>
+      )}
       <div className="pill" style={{ marginBottom: 12 }}>
         scenario: {r.scenario}
         {r.actual_remediation ? ` · actually taken: ${r.actual_remediation}` : ""}
@@ -607,8 +630,20 @@ const TABS: { id: TabId; label: string }[] = [
 export default function App() {
   const [tab, setTab] = useState<TabId>("cf");
   const [scenarios, setScenarios] = useState<ScenarioInfo[]>([]);
+  // Swallowing this left the scenario dropdown silently empty with no explanation,
+  // which is indistinguishable from "still loading".
+  const [loadError, setLoadError] = useState<string | null>(null);
   useEffect(() => {
-    api.getScenarios().then((d) => setScenarios(d.scenarios)).catch(() => setScenarios([]));
+    api
+      .getScenarios()
+      .then((d) => {
+        setScenarios(d.scenarios);
+        setLoadError(null);
+      })
+      .catch((e: unknown) => {
+        setScenarios([]);
+        setLoadError(e instanceof Error ? e.message : String(e));
+      });
   }, []);
 
   return (
@@ -634,6 +669,13 @@ export default function App() {
           engine. Outcomes are always computed, never canned.
         </p>
       </section>
+
+      {loadError && (
+        <div className="banner">
+          <b>Backend unreachable.</b> Could not load the scenario library — {loadError}. The
+          “Build your own” tab still works: it computes outcomes in-process and needs no database.
+        </div>
+      )}
 
       <nav className="tabs">
         {TABS.map((t) => (

@@ -24,6 +24,14 @@ export interface CounterfactualResult {
   decision_regret: number;
   lesson: string | null;
   ledger_verified?: boolean;
+  forked_state?: ForkedState | null;
+}
+
+/** What the agent knew at the fork HLC, reconstructed via AS OF SYSTEM TIME. */
+export interface ForkedState {
+  as_of_hlc: string;
+  evidence: string[];
+  beliefs: { confidence: number; rationale: string | null }[];
 }
 
 export interface RemediationSpec {
@@ -81,9 +89,22 @@ export interface RaceResult {
   external_effect_executions: number;
 }
 
+/** Turn a failed response into the backend's own message, not just its status code. */
+async function failure(res: Response): Promise<Error> {
+  let detail = "";
+  try {
+    const body = (await res.json()) as { detail?: unknown };
+    if (typeof body.detail === "string") detail = body.detail;
+    else if (body.detail != null) detail = JSON.stringify(body.detail);
+  } catch {
+    // Non-JSON body (a proxy error page, a truncated response) — status only.
+  }
+  return new Error(detail || `request failed (HTTP ${res.status})`);
+}
+
 async function get<T>(url: string): Promise<T> {
   const res = await fetch(url);
-  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  if (!res.ok) throw await failure(res);
   return (await res.json()) as T;
 }
 
@@ -93,7 +114,7 @@ async function post<T>(url: string, body?: unknown): Promise<T> {
     headers: body ? { "content-type": "application/json" } : undefined,
     body: body ? JSON.stringify(body) : undefined,
   });
-  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  if (!res.ok) throw await failure(res);
   return (await res.json()) as T;
 }
 

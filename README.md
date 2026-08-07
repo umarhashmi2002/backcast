@@ -25,7 +25,8 @@
 </p>
 
 <p align="center">
-  <em>Every screenshot below is a real run against the deployed stack — live CockroachDB Cloud, live Bedrock.</em>
+  <em>Every screenshot is a real run against a live CockroachDB cluster — no mockups. The agent
+  console is a live Amazon Nova Pro call on the deployed Lambda.</em>
 </p>
 
 <table>

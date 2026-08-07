@@ -22,6 +22,19 @@ from .scoring import cosine_similarity
 _HLC_RE = re.compile(r"^\d+(\.\d+)?$")
 _ORG_RE = re.compile(r"^[A-Za-z0-9_.:-]+$")
 
+
+def validate_hlc(as_of_hlc: str) -> str:
+    """Return ``as_of_hlc`` if it is a bare decimal HLC, else raise.
+
+    ``AS OF SYSTEM TIME`` takes a constant expression, not a bind placeholder, so
+    every caller that inlines an HLC must validate it first. Shared so there is
+    one gate rather than a copy per call site.
+    """
+    if not _HLC_RE.match(as_of_hlc):
+        raise ValueError(f"Invalid HLC timestamp: {as_of_hlc!r}")
+    return as_of_hlc
+
+
 _BELIEF_COLS = (
     "id, org_id, incident_id, hypothesis_id, confidence, rationale, valid_from, "
     "incident_state_version, model_id, prompt_version, created_by, db_ts::STRING AS db_ts"
@@ -44,8 +57,7 @@ class TemporalReconstructor:
 
     def reconstruct(self, incident_id: UUID | str, as_of_hlc: str) -> BeliefState:
         """Reconstruct the agent's beliefs and available evidence at ``as_of_hlc``."""
-        if not _HLC_RE.match(as_of_hlc):
-            raise ValueError(f"Invalid HLC timestamp: {as_of_hlc!r}")
+        validate_hlc(as_of_hlc)
         iid = str(UUID(str(incident_id)))  # validate to prevent injection when inlined
 
         belief_rows = self._conn.execute(
@@ -80,8 +92,7 @@ class TemporalReconstructor:
         scoped set at that HLC and ranks it by *exact* cosine similarity. Evidence
         written after ``as_of_hlc`` is invisible (MVCC), so there is no future leak.
         """
-        if not _HLC_RE.match(as_of_hlc):
-            raise ValueError(f"Invalid HLC timestamp: {as_of_hlc!r}")
+        validate_hlc(as_of_hlc)
         if not _ORG_RE.match(org_id):
             raise ValueError(f"Unsafe org id for inlining: {org_id!r}")
 

@@ -92,20 +92,37 @@ def test_cosine_from_l2_is_antitone(distances: list[float]) -> None:
         assert cosine_from_l2(d1) >= cosine_from_l2(d2) - 1e-9
 
 
-@given(
-    raw_q=st.lists(_component, min_size=3, max_size=8),
-    raw_cands=st.lists(st.lists(_component, min_size=3, max_size=8), min_size=2, max_size=8),
-)
+def _nondegenerate(dim: int) -> st.SearchStrategy[list[float]]:
+    """Vectors of exactly ``dim`` components with a norm big enough to normalize."""
+    return st.lists(_component, min_size=dim, max_size=dim).filter(
+        lambda v: math.sqrt(sum(x * x for x in v)) > 1e-6
+    )
+
+
+@st.composite
+def _query_and_candidates(draw: st.DrawFn) -> tuple[list[float], list[list[float]]]:
+    """A query plus >=2 candidates, all of the same dimension *by construction*.
+
+    Drawing the query and each candidate with independent lengths and then keeping
+    only the candidates whose length matched discarded roughly five sixths of them,
+    which tripped Hypothesis's ``filter_too_much`` health check on unlucky seeds —
+    an intermittent failure unrelated to the property. Fixing the dimension up
+    front removes the filtering instead of suppressing the warning.
+    """
+    dim = draw(st.integers(min_value=3, max_value=8))
+    vectors = _nondegenerate(dim)
+    query = draw(vectors)
+    candidates = draw(st.lists(vectors, min_size=2, max_size=8))
+    return query, candidates
+
+
+@given(case=_query_and_candidates())
 @settings(max_examples=150)
-def test_l2_ranking_equals_cosine_ranking(raw_q: list[float], raw_cands: list[float]) -> None:
+def test_l2_ranking_equals_cosine_ranking(case: tuple[list[float], list[list[float]]]) -> None:
     """Ordering candidates by ascending L2 yields non-increasing cosine similarity."""
-    assume(math.sqrt(sum(x * x for x in raw_q)) > 1e-6)
-    cands = [
-        c for c in raw_cands if len(c) == len(raw_q) and math.sqrt(sum(x * x for x in c)) > 1e-6
-    ]
-    assume(len(cands) >= 2)
+    raw_q, raw_cands = case
     q = _unit(raw_q)
-    unit_cands = [_unit(c) for c in cands]
+    unit_cands = [_unit(c) for c in raw_cands]
     by_l2 = sorted(unit_cands, key=lambda c: _l2(q, c))
     cosines = [cosine_similarity(q, c) for c in by_l2]
     for hi, lo in pairwise(cosines):
