@@ -25,8 +25,8 @@
 </p>
 
 <p align="center">
-  <em>Every screenshot is a real run against a live CockroachDB cluster — no mockups. The agent
-  console is a live Amazon Nova Pro call on the deployed Lambda.</em>
+  <em>Every screenshot is a real run against the <b>deployed</b> stack — the AWS Lambdas above, a
+  CockroachDB Cloud cluster, live Amazon Nova Pro and Titan v2. No mockups, no seeded output.</em>
 </p>
 
 <table>
