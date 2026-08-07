@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import re
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any
@@ -80,6 +81,20 @@ def index() -> FileResponse:
     return FileResponse(_STATIC / "index.html")
 
 
+@app.get("/og.png", include_in_schema=False)
+def og_image() -> FileResponse:
+    """Social preview card.
+
+    Only ``/assets`` is mounted as a static directory, so root-level build output
+    needs an explicit route — without this the ``og:image`` meta tag in index.html
+    points at a 404 and the link previews as a blank card.
+    """
+    card = _STATIC / "og.png"
+    if not card.is_file():
+        raise HTTPException(status_code=404, detail="og.png not bundled in this image")
+    return FileResponse(card, media_type="image/png")
+
+
 @app.get("/openapi.yaml", include_in_schema=False)
 def openapi_yaml() -> FileResponse:
     """Serve the hand-authored OpenAPI 3.0 spec (Swagger UI is at /docs)."""
@@ -97,6 +112,24 @@ def health() -> dict[str, str]:
         return {"status": "ok"}
     finally:
         _release(engine)
+
+
+_TAG_RE = re.compile(r"</?[a-z_]+>", re.IGNORECASE)
+_THINKING_RE = re.compile(r"<thinking>.*?</thinking>", re.IGNORECASE | re.DOTALL)
+
+
+def _clean_summary(summary: str) -> str:
+    """Strip the model's scratchpad markup out of the user-facing summary.
+
+    Nova Pro sometimes emits its reasoning as literal ``<thinking>`` markup and
+    wraps the deliverable in tags of its own. Neither is meant for a reader, and
+    this is a documented API field, so it is cleaned server-side rather than only
+    in the browser. Falls back to the raw text if stripping would empty it.
+    """
+    cleaned = _TAG_RE.sub(" ", _THINKING_RE.sub(" ", summary))
+    cleaned = re.sub(r"\*\*\*?", "", cleaned)
+    cleaned = re.sub(r"\s+", " ", cleaned).strip()
+    return cleaned or summary.strip()
 
 
 def _branch_dict(b: BranchResult, best_id: object) -> dict[str, Any]:
@@ -475,7 +508,7 @@ def agent_turn(org: str = "demo", payload: dict[str, Any] | None = None) -> dict
             "steps": result.steps,
             "tool_calls": result.tool_calls,
             "claimed_action": result.claimed_action,
-            "summary": result.final_text,
+            "summary": _clean_summary(result.final_text),
             "beliefs": beliefs,
             "ledger_verified": engine.ledger.verify(iid),
         }
