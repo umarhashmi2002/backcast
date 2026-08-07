@@ -27,12 +27,51 @@ function useRun<A extends unknown[], T>(fn: (...args: A) => Promise<T>) {
   return { data, loading, error, run };
 }
 
-const pct = (s: number) => Math.max(2, Math.min(100, ((s + 0.5) / 1.5) * 100));
+// Scores are signed and unbounded (a user-defined incident can produce any range),
+// so the domain is derived from the data — always including zero so the axis is
+// meaningful — rather than assumed. Bars diverge from the zero line.
+type Scale = { zero: number; left: (s: number) => number; width: (s: number) => number; lo: number; hi: number };
+
+function makeScale(scores: number[]): Scale {
+  const lo = Math.min(0, ...scores);
+  const hi = Math.max(0, ...scores);
+  const span = hi - lo || 1;
+  const at = (s: number) => ((s - lo) / span) * 100;
+  return {
+    lo,
+    hi,
+    zero: at(0),
+    left: (s) => (s >= 0 ? at(0) : at(s)),
+    width: (s) => Math.max(0.6, (Math.abs(s) / span) * 100),
+  };
+}
 
 // --------------------------------------------------------------------------- //
 // Shared: the branch bar chart (used by both library + custom counterfactuals)
 // --------------------------------------------------------------------------- //
+// The engine forks *every* remediation, including the one actually taken, so the
+// actual branch and its identical fork both come back. Merge them into one row
+// (keeping the descriptive fork label and both tags) rather than showing a duplicate.
+function dedupeBranches(branches: CounterfactualResult["branches"]) {
+  const byKey = new Map<string, CounterfactualResult["branches"][number]>();
+  for (const b of branches) {
+    const key = [...b.remediations].sort().join("|");
+    const seen = byKey.get(key);
+    if (!seen) {
+      byKey.set(key, { ...b });
+      continue;
+    }
+    seen.is_best = seen.is_best || b.is_best;
+    seen.is_actual = seen.is_actual || b.is_actual;
+    // Prefer the label that names the remediation over the generic "actual".
+    if (seen.label === "actual" && b.label !== "actual") seen.label = b.label;
+  }
+  return [...byKey.values()].sort((a, b) => b.score - a.score);
+}
+
 function BranchBars({ r }: { r: CounterfactualResult }) {
+  const branches = dedupeBranches(r.branches);
+  const scale = makeScale(branches.map((b) => b.score));
   return (
     <div className="out">
       <div className="pill" style={{ marginBottom: 12 }}>
@@ -40,7 +79,7 @@ function BranchBars({ r }: { r: CounterfactualResult }) {
         {r.actual_remediation ? ` · actually taken: ${r.actual_remediation}` : ""}
         {r.forked_at_hlc ? ` · forked at HLC ${r.forked_at_hlc.slice(0, 14)}…` : ""}
       </div>
-      {r.branches.map((b) => {
+      {branches.map((b) => {
         const color = b.is_best ? "var(--green)" : b.is_actual ? "var(--amber)" : "#4a5578";
         const result = b.recovered ? "fixed" : b.recurred ? "recurs" : "no fix";
         return (
@@ -52,7 +91,11 @@ function BranchBars({ r }: { r: CounterfactualResult }) {
                 {b.is_actual && <span className="tag actual">ACTUAL</span>}
               </div>
               <div className="bar-track">
-                <div className="bar-fill" style={{ width: `${pct(b.score)}%`, background: color }} />
+                <div className="bar-zero" style={{ left: `${scale.zero}%` }} />
+                <div
+                  className="bar-fill"
+                  style={{ left: `${scale.left(b.score)}%`, width: `${scale.width(b.score)}%`, background: color }}
+                />
               </div>
               <div className="bar-score">{b.score.toFixed(2)}</div>
             </div>
@@ -62,6 +105,10 @@ function BranchBars({ r }: { r: CounterfactualResult }) {
           </div>
         );
       })}
+      <div className="bar-axis">
+        score axis: {scale.lo.toFixed(2)} — {scale.hi.toFixed(2)} · the vertical rule marks zero; bars left of it
+        scored negative
+      </div>
       <div className="regret">
         <span className="n">{r.decision_regret.toFixed(2)}</span>
         <span>simulated decision regret (best − actual) — model-estimated, under the deterministic scenario</span>
@@ -81,6 +128,30 @@ function BranchBars({ r }: { r: CounterfactualResult }) {
       )}
     </div>
   );
+}
+
+// Default the "actually taken" remediation to one that does NOT permanently fix the
+// incident — preferring a symptom-reliever like a restart. Defaulting to the optimal
+// action makes decision regret 0.00, which hides the entire point of the tool.
+function defaultActual(scen: ScenarioInfo | undefined): string {
+  if (!scen) return "";
+  const entries = Object.entries(scen.remediations);
+  const reliever = entries.find(([, r]) => r.relieves && !r.fixes);
+  const nonFixer = entries.find(([, r]) => !r.fixes);
+  return (reliever ?? nonFixer ?? entries[0])?.[0] ?? "";
+}
+
+// Nova Pro sometimes emits its scratchpad as literal <thinking> markup and wraps the
+// deliverable in tags of its own. Neither is meant for the reader — strip both, and
+// fall back to the raw text if stripping leaves nothing.
+function cleanSummary(summary: string): string {
+  const cleaned = summary
+    .replace(/<thinking>[\s\S]*?<\/thinking>/gi, " ")
+    .replace(/<\/?[a-z_]+>/gi, " ")
+    .replace(/\*\*\*?/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+  return cleaned || summary.trim();
 }
 
 // --------------------------------------------------------------------------- //
@@ -109,9 +180,9 @@ function CounterfactualLab({ scenarios }: { scenarios: ScenarioInfo[] }) {
   const [scenKey, setScenKey] = useState(scenarios[0]?.key ?? "db_pool_exhaustion");
   const scen = scenarios.find((s) => s.key === scenKey);
   const remNames = scen ? Object.keys(scen.remediations) : [];
-  const [actual, setActual] = useState(remNames[0] ?? "");
+  const [actual, setActual] = useState(defaultActual(scen));
   useEffect(() => {
-    setActual(Object.keys(scenarios.find((s) => s.key === scenKey)?.remediations ?? {})[0] ?? "");
+    setActual(defaultActual(scenarios.find((s) => s.key === scenKey)));
   }, [scenKey, scenarios]);
 
   const [trueCause, setTrueCause] = useState("a bad config push disabled request caching");
@@ -368,7 +439,7 @@ function AgentTrace({ r }: { r: AgentResult }) {
         </div>
       )}
       <div className="lesson" style={{ borderColor: "var(--purple)", marginTop: 12 }}>
-        <b>agent summary →</b> {r.summary}
+        <b>agent summary →</b> {cleanSummary(r.summary)}
       </div>
     </div>
   );
@@ -412,9 +483,10 @@ function TimeTravel() {
         <h2>Time travel — reconstruct the past</h2>
       </div>
       <div className="sub">
-        At 03:14 the agent blamed a traffic surge; minutes later a deploy correlation flipped it.
-        Reconstruct the 03:14 belief state with <code>AS OF SYSTEM TIME</code> — and prove it{" "}
-        <b>cannot</b> see evidence learned later. The no-leak guarantee is enforced by MVCC, not app code.
+        Replays a scripted incident against the live engine: first the agent blames a traffic surge,
+        then a deploy correlation flips it. Reconstruct the <b>earlier</b> belief state with{" "}
+        <code>AS OF SYSTEM TIME</code> at the captured HLC — and prove it <b>cannot</b> see evidence
+        recorded later. The no-leak guarantee is enforced by MVCC, not app code.
       </div>
       <div className="runrow" style={{ marginTop: 12 }}>
         <button onClick={() => run()} disabled={loading}>
@@ -423,7 +495,7 @@ function TimeTravel() {
               <span className="spinner" /> reconstructing…
             </>
           ) : (
-            "Reconstruct 03:14 ▸"
+            "Replay & reconstruct ▸"
           )}
         </button>
       </div>
@@ -433,13 +505,13 @@ function TimeTravel() {
         data && (
           <div className="out">
             <div className="tl">
-              <Column title="03:14 — reconstructed (AS OF SYSTEM TIME)" snap={data.at_t1} />
+              <Column title="earlier HLC — reconstructed (AS OF SYSTEM TIME)" snap={data.at_t1} />
               <Column title="now — everything known" snap={data.now} />
             </div>
             <div className="kv" style={{ marginTop: 12 }}>
               <b>no-leak guarantee</b>
               <span className={data.no_leak ? "ok" : "no"}>
-                {data.no_leak ? "deploy evidence hidden from the 03:14 view ✓" : "LEAK"}
+                {data.no_leak ? "deploy evidence hidden from the earlier view ✓" : "LEAK"}
               </span>
               <b>belief revision</b>
               <span>
@@ -557,7 +629,9 @@ export default function App() {
         <p>
           Every tab drives the <b>real</b> engine against a live CockroachDB — define your own incident,
           run a live agent, reconstruct the past with <code>AS OF SYSTEM TIME</code>, and govern
-          autonomous actions with fencing tokens. Nothing is hardcoded.
+          autonomous actions with fencing tokens. The counterfactual lab and agent console take your
+          input; time travel and the lease race replay a fixed scripted incident against the live
+          engine. Outcomes are always computed, never canned.
         </p>
       </section>
 

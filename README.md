@@ -20,6 +20,25 @@
 
 </div>
 
+<p align="center">
+  <img src="./docs/img/counterfactual.png" alt="Backcast counterfactual replay: six forked remediations ranked by score against a deterministic incident model, with a simulated decision regret of 1.24 and the winning lesson promoted to procedural memory." width="900">
+</p>
+
+<p align="center">
+  <em>Every screenshot below is a real run against the deployed stack — live CockroachDB Cloud, live Bedrock.</em>
+</p>
+
+<table>
+<tr>
+<td width="50%"><img src="./docs/img/time-travel.png" alt="Temporal reconstruction: the belief state at an earlier HLC shows only the metric evidence (surge 58%, deploy 11%), while the current view adds the deploy evidence and flips the beliefs to surge 8%, deploy 87%. No-leak guarantee verified."></td>
+<td width="50%"><img src="./docs/img/agent.png" alt="Incident Commander running a live Amazon Nova Pro tool-use loop: recall_similar_incidents, record_observation, assess_hypothesis, propose_remediation, ending in a claimed fenced action lease and a verified ledger chain."></td>
+</tr>
+<tr>
+<td align="center"><b>Temporal reconstruction</b> — what the agent believed at an earlier HLC, with future evidence provably hidden by MVCC</td>
+<td align="center"><b>Live agent</b> — a real Bedrock tool-use loop that ends by claiming a <b>fenced action lease</b></td>
+</tr>
+</table>
+
 ---
 
 > **An on-call engineer restarts a service and the alert clears. Incident resolved — or was it?**
@@ -266,6 +285,13 @@ A `UNIQUE(org_id, action_key)` gives exactly one owner; a **fencing generation**
 means a revived stale worker is rejected; an idempotency key makes the external effect safely
 repeatable. Backcast does **not** claim "exactly-once external effects" — it guarantees *one canonical
 action intent with safe repetition*.
+
+Driven live from the browser — 20 workers race for the same action, the holder is crashed mid-flight,
+a second worker takes over, and the revived original is fenced out:
+
+<p align="center">
+  <img src="./docs/img/fencing.png" alt="Action lease race run live: 20 concurrent workers, 1 winner, takeover bumps the fencing generation to 2, the revived stale worker is rejected, and exactly one external effect is executed." width="820">
+</p>
 
 ### The memory model
 
