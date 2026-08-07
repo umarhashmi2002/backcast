@@ -9,6 +9,21 @@ A turn-key script for the hackathon video. Total runtime ≈ **2:50**. Every sho
 
 ## Prep checklist (before you hit record)
 
+**The five frames that must be legible.** These carry the whole judging case visually — more than any
+amount of code on screen. If a viewer can read only five things, make it these:
+
+| # | Frame | Answers |
+|---|-------|---------|
+| 1 | `decision regret: 1.24` | What does Backcast *do*? |
+| 2 | `Lesson promoted` strip | Does the memory actually learn? |
+| 3 | `11% → 87%` belief revision | Is the memory genuinely temporal? |
+| 4 | `deploy evidence hidden ✓` | …and is the no-leak real, not filtered? |
+| 5 | `revived stale worker: fenced out ✓` | Did they take autonomous-agent safety seriously? |
+
+**Do not add** a CDK/CloudWatch/KMS/SQL-console/schema tour. Those belong in the repo and the written
+description; the video's job is to make a judge want to open the repo afterwards.
+
+
 - [ ] Open the live URL in a clean browser window (no extensions bar, 1440×900+, ~125% zoom for legibility).
 - [ ] Warm the Lambdas: click **Run counterfactual** once and **Run Incident Commander** once, then reload (avoids cold-start pauses on camera).
 - [ ] Have a second tab on the GitHub repo and one on `…/docs` (Swagger) for the closing shot.
@@ -44,8 +59,11 @@ it? Or did the real bug just go quiet — and it'll page you again at 3 AM?"
 **POINT AT:** the headline, then the tab bar.
 
 **0:10 · ON SCREEN:** Hover the four tabs — *Counterfactual Lab · Agent Console · Time Travel · Fencing*.
-**VOICEOVER:** "This is Backcast — a temporal decision laboratory for on-call. Agentic memory on
-CockroachDB, serverless on AWS. Everything you're about to see runs live against one database."
+**VOICEOVER:** "This is Backcast — an incident-response agent that can rewind what it knew, replay
+what it could have done, and learn from the better decision. Its memory lives in CockroachDB, and the
+application runs serverless on AWS. Everything you're about to see runs live against one database."
+**NOTE:** "temporal decision laboratory" is good written positioning but abstract when *heard* — keep
+it for the Devpost description, not the voiceover.
 
 ---
 
@@ -61,8 +79,10 @@ deterministic model — the language model never decides what worked."
 
 **0:38 · ON SCREEN:** The ranked bars; the big **decision regret** number (~1.24).
 **VOICEOVER:** "The restart only *relieved* the symptom — it recurs. A deploy rollback was the
-permanent fix. The gap between them is **decision regret**: one-point-two-four. And the winning
-lesson gets written back into the agent's memory."
+permanent fix. The gap between them is **decision regret**: one-point-two-four."
+**THEN STOP TALKING for about two seconds** while the cursor moves ACTUAL → BEST → `1.24`. This is
+the frame judges are most likely to remember; do not narrate over it. Resume with: *"And the winning
+lesson gets written back into the agent's memory."*
 **POINT AT:** the amber ACTUAL bar, the green BEST bar, then the orange regret number, then the
 "Lesson promoted to memory" strip.
 
@@ -82,6 +102,16 @@ deploy d-8842"). Click **Run Incident Commander**.
 **VOICEOVER:** "Now the agent itself. Type any alert. This is a real Amazon Nova Pro tool-use loop
 against CockroachDB — not a script."
 **POINT AT:** the textarea, then the spinner ("agent running…").
+
+> **This is the one real wait in the video — 15–25s of live Bedrock, and it varies run to run.**
+> Do **not** click twice and do **not** stop talking. Fill it deliberately:
+>
+> *"While Nova reasons, the agent can recall similar incidents from vector memory, add new
+> observations, revise its hypotheses, and coordinate the proposed action through CockroachDB."*
+>
+> Then, as the trace lands: *"And here is the actual tool trace."* A 20-second call narrated this way
+> reads as computation; the same 20 seconds in silence reads as a hang. Record several takes and keep
+> the best genuine run — that is still an authentic live demonstration, not a fabricated one.
 
 **1:28 · ON SCREEN:** The tool trace fills in (recall → observe → assess → **propose_remediation** →
 resolve); the beliefs meters; the claimed action.
@@ -109,8 +139,8 @@ eighty-seven percent as evidence arrives."
 **2:20 · ON SCREEN:** *Fencing* tab. Slider at 20. Click **Run the race**.
 **VOICEOVER:** "Second: safe autonomy. Twenty workers race for one action lease — exactly one wins.
 The winner crashes, a standby takes over, and when the original worker returns, its stale fencing
-token stops it finalizing. One canonical owner at a time — which is the honest guarantee, because no
-database can commit atomically with an external side effect."
+token prevents it from finalizing. Backcast guarantees one current logical owner without pretending an
+external side effect can be part of the same database transaction."
 **POINT AT:** "won the lease: 1", "revived stale worker: fenced out ✓", "canonical action owner: 1".
 **DO NOT SAY** "the external effect runs exactly once" — this build never executes a real
 remediation, and the counter on screen is an idempotency-guarded write inside the same cluster.
@@ -122,9 +152,10 @@ would undercut the claims that *are* true.
 ## Close (2:32 – 2:50)
 
 **2:32 · ON SCREEN:** Scroll to the hero / or cut to the README architecture diagram.
-**VOICEOVER:** "Counterfactual replay, temporal no-leak recall, fencing-safe actions, a signed audit
-ledger — CockroachDB lets us keep all of that in one transactional, time-travelling system of
-record. And it's deployed on AWS with Bedrock, Lambda, API Gateway, and KMS."
+**VOICEOVER:** "Counterfactual replay, temporal no-leak recall, fencing-safe actions, and a
+hash-chained audit ledger with KMS-signed checkpoints — CockroachDB lets us keep all of that in one
+transactional, time-travelling system of record. And it's deployed on AWS with Bedrock, Lambda,
+API Gateway, and KMS."
 **POINT AT:** the "one temporal system of record" box in the architecture diagram.
 
 **2:44 · ON SCREEN:** GitHub repo tab (or the `…/docs` Swagger page).
@@ -157,7 +188,7 @@ the live agent are the two moments that win.
 | Criterion | Shown in |
 |---|---|
 | Agentic Memory Design | Acts 2–4 (evidence, beliefs, actions, counterfactual branches — all in CockroachDB) |
-| Technological Implementation | `AS OF SYSTEM TIME`, C-SPANN, fencing, hash chain — used correctly; typed + tested + CI |
+| Technical Implementation | `AS OF SYSTEM TIME`, C-SPANN, fencing, hash chain — used correctly; typed + tested + CI |
 | Real-World Impact | Act 2 (compounding *verified* knowledge on a universal on-call problem) |
-| Product Readiness | Act 3–4 + fenced/idempotent actions, least-privilege IAM, tamper-evident audit |
+| Production Readiness | Act 3–4 + fenced/idempotent actions, least-privilege IAM, tamper-evident audit |
 | Creativity & Originality | Act 2 (transactionally-consistent counterfactual replay + decision regret + build-your-own) |

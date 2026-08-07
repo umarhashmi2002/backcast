@@ -462,9 +462,9 @@ signing) · **API Gateway** (HMAC-verified, throttled ingress) — all via the *
 | Criterion | How Backcast delivers |
 |-----------|----------------------|
 | **Agentic Memory Design** | Six memory tiers in one system: immutable evidence, versioned beliefs + provenance, transactional fenced actions, decayed long-term memory, and counterfactual branches — no ETL, no cross-store drift. |
-| **Technological Implementation** | Correct, precise use of `AS OF SYSTEM TIME`, C-SPANN vectors, fencing tokens, Row-Level TTL, hash chains. Typed (`mypy --strict`), tested (unit + property-based + live-DB integration), CI-gated. |
+| **Technical Implementation** | Correct, precise use of `AS OF SYSTEM TIME`, C-SPANN vectors, fencing tokens, Row-Level TTL, hash chains. Typed (`mypy --strict`), tested (unit + property-based + live-DB integration), CI-gated. |
 | **Real-World Impact** | On-call is universal and expensive. Backcast compounds institutional knowledge *and* compares decisions reproducibly under an explicit deterministic model — then remembers the best simulation-backed one. |
-| **Product Readiness** | Least-privilege IAM, Secrets Manager, fenced + idempotent actions, tamper-evident ledger (KMS-signed checkpoints), HMAC-verified throttled ingress, structured logs, alarms. See [`docs/SECURITY.md`](./docs/SECURITY.md). |
+| **Production Readiness** | Least-privilege IAM, Secrets Manager, fenced + idempotent actions, tamper-evident ledger (KMS-signed checkpoints), HMAC-verified throttled ingress, structured logs, alarms. See [`docs/SECURITY.md`](./docs/SECURITY.md). |
 | **Creativity & Originality** | Transactionally-consistent counterfactual replay of agent decisions, with *simulated* decision regret and simulation-verified-lesson promotion — not generic incident recall. |
 
 ## Real-world impact
@@ -478,8 +478,9 @@ signing) · **API Gateway** (HMAC-verified, throttled ingress) — all via the *
 - **A reusable reference architecture.** Temporal no-leak recall, fencing-safe autonomous actions,
   and hash-chain + KMS tamper-evidence are patterns any agentic system that *takes actions* needs —
   not just SRE.
-- **Safe autonomy.** The fencing + idempotency pattern lets an agent act on the
-  world without split-brain double-execution when workers crash or pause.
+- **Safe autonomy.** The fencing + idempotency pattern is what an agent needs *before* it is allowed
+  to act on the world — one current logical owner, no split-brain double-execution when workers crash
+  or pause. Backcast claims the lease and stops there; executing the action is out of scope.
 
 ## Roadmap
 
@@ -503,15 +504,6 @@ timeline
         Live remediation : real cloud actions behind the fenced-lease + policy gate
         Calibrated autonomy : promote agent from proposer to actor as regret shrinks
 ```
-
-## Status
-
-🚀 Deployed & live (deadline **Aug 18, 2026**). **Done & tested:** memory engine, the SRE agent loop,
-consolidation, temporal + historical reconstruction, fencing, the **counterfactual replay core**,
-KMS-signed ledger checkpoints, HMAC-verified API Gateway ingress, and the React web UI. The full
-`BackcastStack` (4 Lambdas incl. the React UI + API Gateway + KMS) is **deployed and smoke-tested
-end-to-end on AWS + CockroachDB Cloud** — signed ingest → agent turn (Amazon Nova Pro) → fenced action
-lease → resolve → KMS-signed checkpoint, all verified live. **Remaining:** the < 3-min demo video.
 
 ## License
 
