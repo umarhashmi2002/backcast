@@ -155,7 +155,10 @@ The reviewer was right to demand precision, so:
 - **Tamper-evident, not tamper-proof.** The per-incident **hash-chained** `event_ledger` detects any
   edit that doesn't also rewrite every subsequent hash. For integrity beyond a DBA's reach, Backcast
   signs periodic **root-hash checkpoints with AWS KMS** (ECDSA P-256), with optional **S3 Object
-  Lock** export.
+  Lock** export. Deletion is also blocked structurally: `evidence`, `event_ledger` and
+  `ledger_checkpoints` reference `incidents` with **`ON DELETE RESTRICT`**, so removing an incident
+  that has recorded history is refused rather than quietly cascading the audit trail away
+  (migration `0006`). Derived, recomputable tables still cascade.
 - **Time-travel isn't free** — it avoids running *two* synchronized stores, but retention is bounded
   by the GC window, which is why the append-only ledger + signed S3 packages carry durable history.
 - **Vector metric.** Titan v2 embeddings are L2-normalized, so an **L2** index is

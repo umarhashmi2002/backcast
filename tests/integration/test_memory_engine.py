@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import time
 
+import psycopg
 import pytest
 
 from backcast.memory import MemoryEngine
@@ -168,6 +169,13 @@ def test_working_memory_is_ttl_governed_and_records_turns(engine: MemoryEngine, 
     assert [t["role"] for t in turns] == ["user", "assistant"]
     assert turns[0]["content"] == "pool at 94%"
     assert turns[0]["token_estimate"] > 0
+    # Batched rows share a created_at, so order must come from turn_seq.
+    assert [int(t["turn_seq"]) for t in turns] == [1, 2]
+
+    # A second batch continues the sequence rather than restarting it.
+    engine.working.record_turns(org, session_id, [("tool", "recall -> 2 hits")], incident_id=iid)
+    assert [int(t["turn_seq"]) for t in engine.working.turns(session_id)] == [1, 2, 3]
+    assert [t["role"] for t in engine.working.turns(session_id)] == ["user", "assistant", "tool"]
 
     # Row-Level TTL is enforced by CockroachDB, not by application cleanup. Assert
     # against the live schema rather than trusting the migration text.
@@ -181,3 +189,23 @@ def test_working_memory_is_ttl_governed_and_records_turns(engine: MemoryEngine, 
     assert row["summary"] == "done"
 
     assert engine.working.record_turns(org, session_id, []) == 0
+
+
+def test_deleting_an_incident_cannot_erase_its_audit_trail(engine: MemoryEngine, org: str) -> None:
+    """The ledger is durable: a cascade must not be able to take it out."""
+    iid = engine.incidents.create(org, "audited", "payments-api")["id"]
+    engine.ledger.append(org, iid, "incident_opened", {"service": "payments-api"}, actor="agent")
+    engine.evidence.record(
+        Evidence(org_id=org, incident_id=iid, kind=EvidenceKind.metric, content="pool at 94%")
+    )
+
+    with pytest.raises(psycopg.errors.ForeignKeyViolation):
+        engine.conn.execute("DELETE FROM incidents WHERE id = %s", (iid,))
+    engine.conn.rollback()
+
+    rows = engine.conn.execute(
+        "SELECT count(*) AS n FROM event_ledger WHERE incident_id = %s", (iid,)
+    ).fetchone()
+    assert rows is not None
+    assert int(rows["n"]) == 1
+    assert engine.ledger.verify(iid) is True

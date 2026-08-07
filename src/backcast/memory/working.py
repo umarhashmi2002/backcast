@@ -58,28 +58,47 @@ class WorkingMemoryStore:
         """
         if not turns:
             return 0
-        rows: list[tuple[Any, ...]] = [
-            # A cheap token estimate (~4 chars/token) is enough to drive context
-            # trimming; it is never used for billing.
-            (org_id, session_id, incident_id, role, content, max(1, len(content) // 4))
-            for role, content in turns
-        ]
-        placeholders = ", ".join(["(%s, %s, %s, %s, %s, %s)"] * len(rows))
+        # turn_seq comes from a scalar subquery over this session's existing rows.
+        # The subquery reads the statement's snapshot, so every row sees the same
+        # maximum and the literal offset makes each one distinct — giving a stable
+        # order without spending a second round trip on a SELECT max().
+        values: list[str] = []
+        params: list[Any] = []
+        for offset, (role, content) in enumerate(turns, start=1):
+            values.append(
+                "(%s, %s, %s, %s, %s, %s, "
+                "(SELECT coalesce(max(turn_seq), 0) FROM working_memory WHERE session_id = %s) + %s)"
+            )
+            params.extend(
+                (
+                    org_id,
+                    session_id,
+                    incident_id,
+                    role,
+                    content,
+                    # A cheap token estimate (~4 chars/token) is enough to drive
+                    # context trimming; it is never used for billing.
+                    max(1, len(content) // 4),
+                    session_id,
+                    offset,
+                )
+            )
         self._conn.execute(
             "INSERT INTO working_memory "
-            f"(org_id, session_id, incident_id, role, content, token_estimate) VALUES {placeholders}",
-            [value for row in rows for value in row],
+            "(org_id, session_id, incident_id, role, content, token_estimate, turn_seq) VALUES "
+            + ", ".join(values),
+            params,
         )
         self._conn.execute(
             "UPDATE agent_sessions SET last_active_at = now() WHERE id = %s", (session_id,)
         )
-        return len(rows)
+        return len(values)
 
     def turns(self, session_id: UUID | str, *, limit: int = 200) -> list[dict[str, Any]]:
         """Return the session's surviving turns, oldest first."""
         return self._conn.execute(
-            "SELECT role, content, token_estimate, created_at FROM working_memory "
-            "WHERE session_id = %s ORDER BY created_at, id LIMIT %s",
+            "SELECT role, content, token_estimate, turn_seq, created_at FROM working_memory "
+            "WHERE session_id = %s ORDER BY turn_seq LIMIT %s",
             (session_id, limit),
         ).fetchall()
 
