@@ -20,7 +20,9 @@ jobs:
           curl -LsSf https://astral.sh/uv/install.sh | sh
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
       - name: Sync dependencies
-        run: uv sync --group dev
+        # --all-extras installs the `web` extra (fastapi/uvicorn/mangum) so that
+        # `mypy --strict` can resolve backcast.webapp, matching `make bootstrap`.
+        run: uv sync --group dev --all-extras
       - name: Ruff (lint)
         run: uv run ruff check src tests
       - name: Ruff (format check)
@@ -42,7 +44,9 @@ jobs:
           curl -LsSf https://astral.sh/uv/install.sh | sh
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
       - name: Sync dependencies
-        run: uv sync --group dev
+        # --all-extras installs the `web` extra (fastapi/uvicorn/mangum) so that
+        # `mypy --strict` can resolve backcast.webapp, matching `make bootstrap`.
+        run: uv sync --group dev --all-extras
       - name: Start CockroachDB 25.2
         run: |
           docker run -d --name crdb -p 26257:26257 \
