@@ -531,9 +531,19 @@ components:
           type: boolean
           description: False — the revived crashed worker is fenced out.
           example: false
-        external_effect_executions:
+        canonical_action_owners:
           type: integer
-          description: Always 1 — the external side effect ran exactly once (idempotency).
+          description: >-
+            Always 1 — exactly one logical owner holds the action at a time. This is the
+            guarantee Backcast makes; it does not claim exactly-once external execution,
+            because a database transaction cannot atomically commit an external side effect.
+          example: 1
+        simulated_effect_applications:
+          type: integer
+          description: >-
+            Always 1 — an idempotency-key-guarded write, applied once across the crash and
+            the revival. It is a stand-in for a remediation inside this same cluster, not an
+            external side effect; this build never executes a real remediation.
           example: 1
 
     Error:

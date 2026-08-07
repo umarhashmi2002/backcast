@@ -86,7 +86,9 @@ export interface RaceResult {
   crash_takeover_generation: number;
   taker_completed: boolean;
   revived_stale_worker_accepted: boolean;
-  external_effect_executions: number;
+  canonical_action_owners: number;
+  /** Idempotency-guarded write standing in for the remediation; not an external effect. */
+  simulated_effect_applications: number;
 }
 
 /** Turn a failed response into the backend's own message, not just its status code. */

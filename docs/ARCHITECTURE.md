@@ -251,11 +251,15 @@ stateDiagram-v2
 - **Fencing generation** — `lease_generation` is bumped on takeover; every mutating call
   (`mark_executing`, `complete`) is gated on `holder = me AND lease_generation = mine AND
   lease_expires_at > now()`. A revived stale worker carries an old generation and is rejected.
-- **Idempotency** — an idempotency key on the external effect makes re-execution safe.
+- **Idempotency** — each claim records an idempotency key, which is what an executor *would* present
+  to make re-execution safe. This build never executes a real remediation.
 - **Heartbeat** — `heartbeat_at` + TTL let a healthy holder keep the lease and a dead one lose it.
 
 `make race-demo` and the web UI `/api/race` panel demonstrate 20+ workers racing, a crash, a fenced
-takeover, and a single external-effect execution.
+takeover, and **one canonical action owner at a time**. The counter they report is an
+idempotency-guarded write into a table in this same cluster — a stand-in for a remediation, not an
+external side effect. Backcast does not claim exactly-once external execution, because a database
+transaction cannot atomically commit with an external AWS call.
 
 ## 8. Ledger + KMS-signed checkpoints
 

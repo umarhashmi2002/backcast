@@ -15,6 +15,25 @@ A turn-key script for the hackathon video. Total runtime ≈ **2:50**. Every sho
 - [ ] Mic check; screen recorder at 60fps; cursor highlighting on.
 - [ ] Close Slack/mail; silence notifications.
 
+### Pacing — measured latencies on the deployed stack
+
+The cluster now sits in `us-east-1` alongside the Lambdas, so the waits this script was originally
+written around are gone. Current warm numbers:
+
+| Action | Warm latency |
+|---|---|
+| `Run counterfactual` | **~1.1s** |
+| `Replay & reconstruct` (time travel) | ~1.1s |
+| `Run the race` (20 workers) | ~3.4s (1.3s of it a deliberate lease-expiry wait) |
+| `Run Incident Commander` | **~15–25s** — a live Bedrock turn, and the only real wait |
+| Build-your-own `Simulate` | ~0.7s |
+
+So there is **no dead air to cover on the counterfactual** — the result lands almost immediately.
+Don't pad the narration for it; let the number appear, then pause 2–3 seconds on `1.24` so it
+registers. The one place you *do* need narration to cover latency is the agent turn: keep talking
+through it ("recall similar incidents by vector search, record evidence, revise beliefs…") because
+Bedrock takes 15–25s and varies run to run.
+
 ---
 
 ## Act 1 — The hook (0:00 – 0:22)
@@ -34,7 +53,8 @@ CockroachDB, serverless on AWS. Everything you're about to see runs live against
 
 **0:22 · ON SCREEN:** *Counterfactual Lab* tab. Scenario dropdown = `db_pool_exhaustion`;
 "Remediation actually taken" = `restart-service`. Click **Run counterfactual**.
-**VOICEOVER:** "Here's a real incident: a deploy shrank the DB connection pool. Our engineer restarted
+**VOICEOVER:** "Here's our flagship incident scenario: a deploy shrank the DB connection pool. The
+on-call engineer restarted
 the service. Backcast rewinds to that moment, forks *every* alternative, and scores each on a
 deterministic model — the language model never decides what worked."
 **POINT AT:** the bar chart animating in.
@@ -66,8 +86,8 @@ against CockroachDB — not a script."
 **1:28 · ON SCREEN:** The tool trace fills in (recall → observe → assess → **propose_remediation** →
 resolve); the beliefs meters; the claimed action.
 **VOICEOVER:** "Watch it work: recall similar incidents by vector search, record evidence, revise its
-beliefs, and — critically — claim a **fenced action lease** before it touches anything. Every step is
-written to a hash-chained ledger."
+beliefs, and — critically — claim a **fenced action lease** before any remediation can become the
+canonical action. Every step is written to a hash-chained ledger."
 **POINT AT:** the orange `propose_remediation` step, then the "claimed action" row, then
 "ledger chain — verified ✓".
 
@@ -88,9 +108,14 @@ eighty-seven percent as evidence arrives."
 
 **2:20 · ON SCREEN:** *Fencing* tab. Slider at 20. Click **Run the race**.
 **VOICEOVER:** "Second: safe autonomy. Twenty workers race for one action lease — exactly one wins.
-The winner crashes, a standby takes over, and the revived worker is fenced out. The external effect
-runs exactly once."
-**POINT AT:** "won the lease: 1", "revived stale worker: fenced out ✓", "executed exactly 1×".
+The winner crashes, a standby takes over, and when the original worker returns, its stale fencing
+token stops it finalizing. One canonical owner at a time — which is the honest guarantee, because no
+database can commit atomically with an external side effect."
+**POINT AT:** "won the lease: 1", "revived stale worker: fenced out ✓", "canonical action owner: 1".
+**DO NOT SAY** "the external effect runs exactly once" — this build never executes a real
+remediation, and the counter on screen is an idempotency-guarded write inside the same cluster.
+Claiming exactly-once external execution is the one line a systems-minded judge would catch, and it
+would undercut the claims that *are* true.
 
 ---
 
@@ -98,8 +123,8 @@ runs exactly once."
 
 **2:32 · ON SCREEN:** Scroll to the hero / or cut to the README architecture diagram.
 **VOICEOVER:** "Counterfactual replay, temporal no-leak recall, fencing-safe actions, a signed audit
-ledger — all in **one** transactional, time-travelling store. That's only possible on CockroachDB,
-and it's deployed on AWS with Bedrock, Lambda, API Gateway, and KMS."
+ledger — CockroachDB lets us keep all of that in one transactional, time-travelling system of
+record. And it's deployed on AWS with Bedrock, Lambda, API Gateway, and KMS."
 **POINT AT:** the "one temporal system of record" box in the architecture diagram.
 
 **2:44 · ON SCREEN:** GitHub repo tab (or the `…/docs` Swagger page).

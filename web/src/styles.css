@@ -164,3 +164,5 @@ input[type="checkbox"] { accent-color: var(--purple); width: 17px; height: 17px;
   background: #4a5578; }
 .trace .step.act { color: var(--ink); font-weight: 650; }
 .trace .step.act .dot { background: var(--orange); box-shadow: 0 0 0 3px rgba(255,159,67,.16); }
+
+.kv .muted { color: var(--muted); font-size: 11.5px; font-weight: 400; }

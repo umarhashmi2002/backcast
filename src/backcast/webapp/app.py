@@ -404,7 +404,7 @@ def race(org: str = "demo", workers: int = 20) -> dict[str, Any]:
     org = f"{org}-race-{uuid4().hex[:6]}"
     setup = _engine(fresh=True)
     setup.conn.execute(
-        "CREATE TABLE IF NOT EXISTS demo_web_effects "
+        "CREATE TABLE IF NOT EXISTS demo_simulated_effects "
         "(idempotency_key STRING PRIMARY KEY, applied_by STRING NOT NULL)"
     )
     iid = setup.incidents.create(org, "payments-api 5xx", "payments-api")["id"]
@@ -427,7 +427,7 @@ def race(org: str = "demo", workers: int = 20) -> dict[str, Any]:
 
     def apply_effect(eng: MemoryEngine, worker: str) -> bool:
         row = eng.conn.execute(
-            "INSERT INTO demo_web_effects (idempotency_key, applied_by) VALUES (%s, %s) "
+            "INSERT INTO demo_simulated_effects (idempotency_key, applied_by) VALUES (%s, %s) "
             "ON CONFLICT (idempotency_key) DO NOTHING RETURNING applied_by",
             (idem, worker),
         ).fetchone()
@@ -453,7 +453,7 @@ def race(org: str = "demo", workers: int = 20) -> dict[str, Any]:
     a2 = _engine(fresh=True)
     revived_ok = a2.leases.complete(claim.lease_id, "worker-A", claim.lease_generation)
     count = b.conn.execute(
-        "SELECT count(*) AS n FROM demo_web_effects WHERE idempotency_key = %s", (idem,)
+        "SELECT count(*) AS n FROM demo_simulated_effects WHERE idempotency_key = %s", (idem,)
     ).fetchone()
     executions = int(count["n"]) if count else -1
     a2.close()
@@ -465,7 +465,13 @@ def race(org: str = "demo", workers: int = 20) -> dict[str, Any]:
         "crash_takeover_generation": takeover.lease_generation,
         "taker_completed": completed_b,
         "revived_stale_worker_accepted": revived_ok,
-        "external_effect_executions": executions,
+        # The real guarantee: one logical owner of the action at any time.
+        "canonical_action_owners": 1 if completed_b and not revived_ok else 0,
+        # An idempotency-key-guarded write standing in for the remediation. It lives
+        # in *this* cluster, so it is a simulated effect, not an external one — a
+        # database transaction cannot atomically commit an external AWS side effect,
+        # and this build never executes a real remediation.
+        "simulated_effect_applications": executions,
     }
 
 

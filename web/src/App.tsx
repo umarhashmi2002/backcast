@@ -562,12 +562,15 @@ function Fencing() {
   return (
     <section className="panel">
       <div className="head">
-        <h2>Safe autonomy — one action, once</h2>
+        <h2>Safe autonomy — one owner at a time</h2>
       </div>
       <div className="sub">
         {workers} workers race to remediate; exactly one wins the lease. The winner crashes; a standby
-        takes over (fencing generation bumps); the revived stale worker is <b>fenced out</b>, and the
-        external effect runs exactly once.
+        takes over (fencing generation bumps); and when the original worker returns, its <b>stale
+        fencing token</b> prevents it from finalizing. The guarantee is <b>one canonical action owner
+        at a time</b> — not exactly-once execution, which no database can offer for an external side
+        effect. This build never executes a real remediation; the effect below is an
+        idempotency-guarded write standing in for one.
       </div>
       <div className="form2" style={{ marginTop: 12 }}>
         <label className="field inline">
@@ -607,9 +610,14 @@ function Race({ r }: { r: RaceResult }) {
         <span className={r.revived_stale_worker_accepted ? "no" : "ok"}>
           {r.revived_stale_worker_accepted ? "accepted — BAD" : "fenced out ✓"}
         </span>
-        <b>external effect</b>
-        <span className={r.external_effect_executions === 1 ? "ok" : "no"}>
-          executed exactly {r.external_effect_executions}× across crash + revival
+        <b>canonical action owner</b>
+        <span className={r.canonical_action_owners === 1 ? "ok" : "no"}>
+          {r.canonical_action_owners} at a time ✓
+        </span>
+        <b>simulated effect</b>
+        <span className={r.simulated_effect_applications === 1 ? "ok" : "no"}>
+          applied {r.simulated_effect_applications}× across crash + revival{" "}
+          <span className="muted">(idempotency-guarded write, not an external system)</span>
         </span>
       </div>
     </div>
