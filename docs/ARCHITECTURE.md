@@ -33,6 +33,13 @@ data model see [MEMORY_MODEL.md](./MEMORY_MODEL.md); for the security analysis s
 
 ## 1. System overview
 
+<p align="center">
+  <img src="./img/architecture.png"
+       alt="Backcast architecture: an HMAC-verified API Gateway ingress and browser feed four ARM64 Lambdas (ingest, commander, consolidate, webapp) alongside Amazon Bedrock (Nova Pro, Titan v2), S3, KMS, Secrets Manager, EventBridge and CloudWatch — all writing into one co-located CockroachDB Cloud cluster holding six memory tiers: episodic evidence with C-SPANN vector indexes, bitemporal beliefs, semantic and procedural memory, fenced action leases, a hash-chained ledger with KMS-signed checkpoints, and Row-Level-TTL working memory, plus the counterfactual replay tables."
+       width="100%">
+</p>
+
+
 ```mermaid
 flowchart TB
     AM["Alert source<br/>Alertmanager / PagerDuty"]
